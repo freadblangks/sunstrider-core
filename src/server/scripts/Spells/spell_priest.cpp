@@ -194,7 +194,7 @@ public:
         void Register() override
         {
             OnCheckCast += SpellCheckCastFn(spell_pri_consume_magic_SpellScript::HandleCheckCast);
-            OnEffectHitTarget += SpellEffectFn(spell_pri_consume_magic_SpellScript::HandleEffectHit, EFFECT_0, SPELL_EFFECT_ENERGIZE);
+           //OnEffectHitTarget += SpellEffectFn(spell_pri_consume_magic_SpellScript::HandleEffectHit, EFFECT_0, SPELL_EFFECT_ENERGIZE);
         }
     };
 
