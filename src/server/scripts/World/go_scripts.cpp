@@ -2002,7 +2002,7 @@ public:
         {
             if (eventId == GAME_EVENT_HOURLY_BELLS && start)
             {
-                time_t time = GameTime::GetGameTime();
+                time_t time = WorldGameTime::GetGameTime();
                 tm localTm;
                 localtime_r(&time, &localTm);
                 uint8 _rings = (localTm.tm_hour - 1) % 12 + 1;

@@ -797,7 +797,7 @@ public:
         {
             _events.Update(diff);
 
-            time_t time = GameTime::GetGameTime();
+            time_t time = WorldGameTime::GetGameTime();
             tm localTm;
             localtime_r(&time, &localTm);
 

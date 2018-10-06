@@ -1638,7 +1638,7 @@ public:
         void DamageTaken(Unit* doneBy, uint32& damage) override
         {
             if (doneBy)
-                _damageTimes[doneBy->GetGUID()] = GameTime::GetGameTime();
+                _damageTimes[doneBy->GetGUID()] = WorldGameTime::GetGameTime();
             damage = 0;
         }
 
@@ -1655,7 +1655,7 @@ public:
 
             _combatCheckTimer = 500;
 
-            time_t const now = GameTime::GetGameTime();
+            time_t const now = WorldGameTime::GetGameTime();
             auto const& pveRefs = me->GetCombatManager().GetPvECombatRefs();
             for (auto itr = _damageTimes.begin(); itr != _damageTimes.end();)
             {

@@ -21,6 +21,7 @@
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellAuras.h"
+#include "Pet.h"
 
 enum Orphans
 {

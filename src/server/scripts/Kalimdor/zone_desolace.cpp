@@ -38,6 +38,7 @@ EndContentData */
 #include "EscortAI.h"
 #include "ScriptedGossip.h"
 #include "SpellInfo.h"
+#include "Pet.h"
 
 enum DyingKodo
 {
