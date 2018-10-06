@@ -909,9 +909,10 @@ class TC_GAME_API WorldSession
 
         /* */
 
-#ifdef TRINITY_DEBUG
         //for HandleDebugValuesSnapshot command
-        std::vector<uint32> snapshot_values;
+        typedef std::vector<uint32> SnapshotType;
+#ifdef TRINITY_DEBUG
+        SnapshotType snapshot_values;
 #endif
 
     public:

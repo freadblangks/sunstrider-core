@@ -2551,7 +2551,7 @@ void Spell::TargetInfo::DoTargetSpellHit(Spell* spell, uint8 effIndex)
     if (unit->IsAlive() != IsAlive)
         return;
 
-    if (spell->getState() == SPELL_STATE_DELAYED && !spell->IsPositive() && (GameTime::GetGameTimeMS() - TimeDelay) <= unit->m_lastSanctuaryTime)
+    if (spell->getState() == SPELL_STATE_DELAYED && !spell->IsPositive() && (unit->GetMap()->GetGameTimeMS() - TimeDelay) <= unit->m_lastSanctuaryTime)
         return;                                             // No missinfo in that case
 
     if (_spellHitTarget)
@@ -3439,6 +3439,8 @@ uint32 Spell::prepare(SpellCastTargets const& targets, AuraEffect const* trigger
                 tmpPlayer->SendSpectatorAddonMsgToBG(msg);
             }
 
+    CallScriptSpellStartHandlers();
+
     //Containers for channeled spells have to be set
     // Why check duration? 29350: channelled triggers channelled
     //sun: if after changes, TRIGGERED_CAST_DIRECTLY works for channeled, also fix _TestPowerCost
@@ -3931,11 +3933,11 @@ void Spell::handle_immediate()
 
     // sun: set channel target before processing targets. Aura of channeling spells needs this to be set beforehand.
     if (m_spellInfo->IsChanneled())
-        if (Unit* caster = m_caster->ToUnit())
+        if (_unitCaster)
         {
             ObjectGuid channelTarget = GetStartChannelTarget();
             if (channelTarget)
-                caster->SetChannelObjectGuid(channelTarget);
+                _unitCaster->SetChannelObjectGuid(channelTarget);
         }
 
     // consider spell hit for some spells without target, so they may proc on finish phase correctly
@@ -4672,7 +4674,7 @@ void Spell::SendSpellGo()
     castData.CastID = m_cast_count;
     castData.SpellID = m_spellInfo->Id;
     castData.CastFlags = castFlags;
-    castData.CastTime = GameTime::GetGameTimeMS();
+    castData.CastTime = m_caster->GetMap()->GetGameTimeMS();
 
     UpdateSpellCastDataTargets(castData);
 
@@ -5051,6 +5053,11 @@ void Spell::SendChannelUpdate(uint32 time, uint32 spellId)
 ObjectGuid Spell::GetStartChannelTarget() const
 {
     ObjectGuid channelTarget = m_targets.GetObjectTargetGUID();
+    //also consider GetChannelObjectGuid from EffectTransmitted 
+    if (!channelTarget)
+        if (_unitCaster)
+            channelTarget = _unitCaster->GetChannelObjectGuid();
+
     if (!channelTarget && !m_spellInfo->NeedsExplicitUnitTarget())
         if (m_UniqueTargetInfo.size() + m_UniqueGOTargetInfo.size() == 1)   // this is for TARGET_SELECT_CATEGORY_NEARBY
             channelTarget = !m_UniqueTargetInfo.empty() ? m_UniqueTargetInfo.front().TargetGUID : m_UniqueGOTargetInfo.front().TargetGUID;
@@ -8442,6 +8449,19 @@ void Spell::CallScriptAfterCastHandlers()
     {
         m_loadedScript->_PrepareScriptCall(SPELL_SCRIPT_HOOK_AFTER_CAST);
         auto hookItrEnd = m_loadedScript->AfterCast.end(), hookItr = m_loadedScript->AfterCast.begin();
+        for (; hookItr != hookItrEnd; ++hookItr)
+            (*hookItr).Call(m_loadedScript);
+
+        m_loadedScript->_FinishScriptCall();
+    }
+}
+
+void Spell::CallScriptSpellStartHandlers()
+{
+    for (auto & m_loadedScript : m_loadedScripts)
+    {
+        m_loadedScript->_PrepareScriptCall(SPELL_SCRIPT_HOOK_ON_START);
+        auto hookItrEnd = m_loadedScript->OnSpellStart.end(), hookItr = m_loadedScript->OnSpellStart.begin();
         for (; hookItr != hookItrEnd; ++hookItr)
             (*hookItr).Call(m_loadedScript);
 

@@ -260,7 +260,7 @@ Player::Player(WorldSession *session) :
     }
     m_bgTeam = 0;
 
-    m_logintime = GameTime::GetGameTime();
+    m_logintime = WorldGameTime::GetGameTime();
     m_Last_tick = m_logintime;
     m_WeaponProficiency = 0;
     m_ArmorProficiency = 0;
@@ -324,7 +324,7 @@ Player::Player(WorldSession *session) :
     }
 
     // Honor System
-    m_lastHonorUpdateTime = GameTime::GetGameTime();
+    m_lastHonorUpdateTime = WorldGameTime::GetGameTime();
 
     // Player summoning
     m_summon_expire = 0;
@@ -452,9 +452,10 @@ void Player::SetMapAtCreation(PlayerInfo const* info)
         RelocateToBetaZone();
     else
     {
-        Relocate(info->positionX, info->positionY, info->positionZ);
+        Relocate(info->positionX, info->positionY, info->positionZ, info->positionO);
         SetMap(sMapMgr->CreateMap(info->mapId, this));
     }
+
     UpdatePositionData();
 }
 
@@ -582,7 +583,7 @@ bool Player::Create(ObjectGuid::LowType guidlow, const std::string& name, uint8 
     }
 
     // Played time
-    m_Last_tick = GameTime::GetGameTime();
+    m_Last_tick = WorldGameTime::GetGameTime();
     m_Played_time[0] = 0;
     m_Played_time[1] = 0;
 
@@ -1173,7 +1174,7 @@ void Player::Update( uint32 p_time )
     }
 
     // undelivered mail
-    if(m_nextMailDelivereTime && m_nextMailDelivereTime <= GameTime::GetGameTime())
+    if(m_nextMailDelivereTime && m_nextMailDelivereTime <= WorldGameTime::GetGameTime())
     {
         SendNewMail();
         ++unReadMails;
@@ -1186,7 +1187,7 @@ void Player::Update( uint32 p_time )
     _cinematicMgr->m_cinematicDiff += p_time;
     if (_cinematicMgr->m_cinematicCamera && _cinematicMgr->m_activeCinematicCameraId && GetMSTimeDiffToNow(_cinematicMgr->m_lastCinematicCheck) > CINEMATIC_UPDATEDIFF)
     {
-        _cinematicMgr->m_lastCinematicCheck = GameTime::GetGameTimeMS();
+        _cinematicMgr->m_lastCinematicCheck = GetMap()->GetGameTimeMS();
         _cinematicMgr->UpdateCinematicLocation(p_time);
     }
 
@@ -1195,7 +1196,7 @@ void Player::Update( uint32 p_time )
     Unit::Update(p_time);
     SetCanDelayTeleport(false);
 
-    time_t now = time (nullptr);
+    time_t now = GetMap()->GetGameTime();
 
     UpdatePvPFlag(now);
 
@@ -1312,7 +1313,7 @@ void Player::Update( uint32 p_time )
     {
         if(roll_chance_i(3) && GetTimeInnEnter() > 0)       //freeze update
         {
-            time_t currTime = GameTime::GetGameTime();
+            time_t currTime = WorldGameTime::GetGameTime();
             int time_inn = currTime - GetTimeInnEnter();
             if (time_inn >= 10)                             //freeze update
             {
@@ -1587,7 +1588,7 @@ bool Player::BuildEnumData(PreparedQueryResult result, WorldPacket * p_data, Wor
     *p_data << uint8(facialStyle);
 
     *p_data << uint8(fields[7].GetUInt8());                     // level
-    *p_data << uint32(fields[8].GetUInt32());                   // zone
+    *p_data << uint32(fields[8].GetUInt16());                   // zone
     *p_data << uint32(fields[9].GetUInt32());                   // map
 
     *p_data << fields[10].GetFloat();                           // x
@@ -1613,22 +1614,17 @@ bool Player::BuildEnumData(PreparedQueryResult result, WorldPacket * p_data, Wor
 
     *p_data << (uint32)char_flags;                          // character flags
 
-    if (session->GetClientBuild() == BUILD_335)
-    {
 #ifdef LICH_KING
-        // character customize flags
-        if (atLoginFlags & AT_LOGIN_CUSTOMIZE)
-            *p_data << uint32(CHAR_CUSTOMIZE_FLAG_CUSTOMIZE);
-        else if (atLoginFlags & AT_LOGIN_CHANGE_FACTION)
-            *p_data << uint32(CHAR_CUSTOMIZE_FLAG_FACTION);
-        else if (atLoginFlags & AT_LOGIN_CHANGE_RACE)
-            *p_data << uint32(CHAR_CUSTOMIZE_FLAG_RACE);
-        else
-            *p_data << uint32(CHAR_CUSTOMIZE_FLAG_NONE);
-#else
-        *p_data << uint32(0);
+    // character customize flags
+    if (atLoginFlags & AT_LOGIN_CUSTOMIZE)
+        *p_data << uint32(CHAR_CUSTOMIZE_FLAG_CUSTOMIZE);
+    else if (atLoginFlags & AT_LOGIN_CHANGE_FACTION)
+        *p_data << uint32(CHAR_CUSTOMIZE_FLAG_FACTION);
+    else if (atLoginFlags & AT_LOGIN_CHANGE_RACE)
+        *p_data << uint32(CHAR_CUSTOMIZE_FLAG_RACE);
+    else
+        *p_data << uint32(CHAR_CUSTOMIZE_FLAG_NONE);
 #endif
-    }
 
     // First login
     *p_data << uint8(atLoginFlags & AT_LOGIN_FIRST ? 1 : 0);
@@ -1689,23 +1685,20 @@ bool Player::BuildEnumData(PreparedQueryResult result, WorldPacket * p_data, Wor
         *p_data << (uint8)proto->InventoryType;
         *p_data << (uint32)(enchant ? enchant->aura_id : 0);
     }
+#ifdef LICH_KING
     //LK also sends bag
-    if(session->GetClientBuild() == BUILD_335)
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; slot++)
     {
-        for(uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; slot++)
-        {
-            *p_data << (uint32)0;
-            *p_data << (uint8)0;
-            *p_data << (uint32)0;
-        }
-    }
-    if (session->GetClientBuild() == BUILD_243)
-    {
-        //first bag info ?
         *p_data << (uint32)0;
         *p_data << (uint8)0;
         *p_data << (uint32)0;
     }
+#else
+    //first bag info ?
+    *p_data << (uint32)0;
+    *p_data << (uint8)0;
+    *p_data << (uint32)0;
+#endif
 
     return true;
 }
@@ -3037,7 +3030,7 @@ void Player::InitStatsForLevel(bool reapplyMods)
     SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED );   // must be set
 
     // cleanup player flags (will be re-applied if need at aura load), to avoid have ghost flag without ghost aura, for example.
-    RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_AFK | PLAYER_FLAGS_DND | PLAYER_FLAGS_GM | PLAYER_FLAGS_GHOST | PLAYER_FLAGS_IN_PVP || PLAYER_FLAGS_FFA_PVP);
+    RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_AFK | PLAYER_FLAGS_DND | PLAYER_FLAGS_GM | PLAYER_FLAGS_GHOST | PLAYER_FLAGS_IN_PVP | PLAYER_FLAGS_FFA_PVP);
 
     RemoveStandFlags(UNIT_STAND_FLAGS_ALL);                 // one form stealth modified bytes
     //TC RemoveByteFlag(UNIT_FIELD_BYTES_2, UNIT_BYTES_2_OFFSET_PVP_FLAG, UNIT_BYTE2_FLAG_FFA_PVP | UNIT_BYTE2_FLAG_SANCTUARY);
@@ -3141,7 +3134,7 @@ void Player::UpdateNextMailTimeAndUnreads()
 {
     // calculate next delivery time (min. from non-delivered mails
     // and recalculate unReadMail
-    time_t cTime = GameTime::GetGameTime();
+    time_t cTime = WorldGameTime::GetGameTime();
     m_nextMailDelivereTime = 0;
     unReadMails = 0;
     for(auto & itr : m_mail)
@@ -3158,7 +3151,7 @@ void Player::UpdateNextMailTimeAndUnreads()
 
 void Player::AddNewMailDeliverTime(time_t deliver_time)
 {
-    if(deliver_time <= GameTime::GetGameTime())                          // ready now
+    if(deliver_time <= WorldGameTime::GetGameTime())                          // ready now
     {
         ++unReadMails;
         SendNewMail();
@@ -3740,7 +3733,7 @@ uint32 Player::ResetTalentsCost() const
         return 10*GOLD;
     else
     {
-        uint32 months = (GameTime::GetGameTime() - m_resetTalentsTime)/MONTH;
+        uint32 months = (WorldGameTime::GetGameTime() - m_resetTalentsTime)/MONTH;
         if(months > 0)
         {
             // This cost will be reduced by a rate of 5 gold per month
@@ -3843,7 +3836,7 @@ bool Player::ResetTalents(bool no_cost)
         ModifyMoney(-(int32)cost);
 
         m_resetTalentsCost = cost;
-        m_resetTalentsTime = GameTime::GetGameTime();
+        m_resetTalentsTime = WorldGameTime::GetGameTime();
     }
 
     //FIXME: remove pet before or after unlearn spells? for now after unlearn to allow removing of talent related, pet affecting auras
@@ -4042,7 +4035,7 @@ void Player::DeleteOldCharacters()
     TC_LOG_INFO("entities.player", "Player::DeleteOldCharacters: Deleting all characters which have been deleted %u days before...", keepDays);
 
     PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHAR_OLD_CHARS);
-    stmt->setUInt32(0, uint32(GameTime::GetGameTime() - time_t(keepDays * DAY)));
+    stmt->setUInt32(0, uint32(WorldGameTime::GetGameTime() - time_t(keepDays * DAY)));
     PreparedQueryResult result = CharacterDatabase.Query(stmt);
 
     if (result)
@@ -4380,6 +4373,7 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
 
     // remove death flag + set aura
     SetByteValue(UNIT_FIELD_BYTES_1, UNIT_BYTES_1_OFFSET_ANIM_TIER, 0x00);
+    RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
     if(GetRace() == RACE_NIGHTELF)
         RemoveAurasDueToSpell(20584);                       // speed bonuses
     RemoveAurasDueToSpell(8326);                            // SPELL_AURA_GHOST
@@ -4455,7 +4449,7 @@ void Player::KillPlayer()
     // 6 minutes until repop at graveyard
     m_deathTimer = 6*MINUTE*1000;
 
-    m_deathTime = GameTime::GetGameTime();
+    m_deathTime = GetMap()->GetGameTime();
 
     UpdateCorpseReclaimDelay();                             // dependent at use SetDeathPvP() call before kill
 
@@ -6106,15 +6100,20 @@ void Player::CheckAreaExploreAndOutdoor()
     if (IsInFlight())
         return;
 
+    if (GetTransport())
+        return;
+
     if (!IsOutdoors())
         RemoveAurasWithAttribute(SPELL_ATTR0_OUTDOORS_ONLY);
     else 
     {
         // Check if we need to reapply outdoor only passive spells
         const PlayerSpellMap& sp_list = GetSpellMap();
-        for (const auto & itr : sp_list) {
+        for (const auto & itr : sp_list)
+        {
             if (itr.second->state == PLAYERSPELL_REMOVED)
                 continue;
+
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(itr.first);
             if (!spellInfo || !IsNeedCastSpellAtOutdoor(spellInfo) || HasAuraEffect(itr.first, EFFECT_0))
                 continue;
@@ -6145,7 +6144,9 @@ void Player::CheckAreaExploreAndOutdoor()
     {
         SetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset, (uint32)(currFields | val));
 
-        //TC LK UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_EXPLORE_AREA);
+#ifdef LICH_KING
+        UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_EXPLORE_AREA);
+#endif
 
         if (areaEntry->area_level > 0)
         {
@@ -6433,8 +6434,8 @@ void Player::UpdateArenaFields()
 void Player::UpdateHonorFields()
 {
     /// called when rewarding honor and at each save
-    uint64 now = GameTime::GetGameTime();
-    uint64 today = uint64(GameTime::GetGameTime() / DAY) * DAY;
+    uint64 now = WorldGameTime::GetGameTime();
+    uint64 today = uint64(WorldGameTime::GetGameTime() / DAY) * DAY;
 
     if(m_lastHonorUpdateTime < today)
     {
@@ -6789,7 +6790,7 @@ void Player::UpdatePvPState(bool onlyFFA)
     else                                                    // in friendly area
     {
         if (IsPvP() && !HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_IN_PVP) && !pvpInfo.endTimer)
-            pvpInfo.endTimer = GameTime::GetGameTime();                  // start toggle-off
+            pvpInfo.endTimer = WorldGameTime::GetGameTime();                  // start toggle-off
     }
 }
 
@@ -6918,7 +6919,7 @@ void Player::UpdateZone(uint32 newZone, uint32 newArea)
             SetRestType(REST_TYPE_IN_CITY);
 
         SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING);
-        InnEnter(GameTime::GetGameTime(), GetMapId(), 0, 0, 0);
+        InnEnter(WorldGameTime::GetGameTime(), GetMapId(), 0, 0, 0);
 
         pvpInfo.IsInNoPvPArea = true;
     }
@@ -8149,7 +8150,7 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
 
         // loot was generated and respawntime has passed since then, allow to recreate loot
         // to avoid bugs, this rule covers spawned gameobjects only
-        if (go->isSpawnedByDefault() && go->getLootState() == GO_ACTIVATED && !go->loot.isLooted() && go->GetLootGenerationTime() + go->GetRespawnDelay() < GameTime::GetGameTime())
+        if (go->isSpawnedByDefault() && go->getLootState() == GO_ACTIVATED && !go->loot.isLooted() && go->GetLootGenerationTime() + go->GetRespawnDelay() < WorldGameTime::GetGameTime())
             go->SetLootState(GO_READY);
 
         if(go->getLootState() == GO_READY)
@@ -12121,7 +12122,7 @@ void Player::AddItemToBuyBackSlot(Item *pItem)
         RemoveItemFromBuyBackSlot(slot, true);
 
         m_items[slot] = pItem;
-        time_t base = GameTime::GetGameTime();
+        time_t base = WorldGameTime::GetGameTime();
         uint32 etime = uint32(base - m_logintime + (30 * 3600));
         uint32 eslot = slot - BUYBACK_SLOT_START;
 
@@ -13108,7 +13109,7 @@ bool Player::CanCompleteRepeatableQuest( Quest const *pQuest )
         return false;
 
     if (pQuest->HasFlag( QUEST_TRINITY_FLAGS_DELIVER) )
-        for(int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
+        for(int i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; i++)
             if( pQuest->RequiredItemId[i] && pQuest->RequiredItemCount[i] && !HasItemCount(pQuest->RequiredItemId[i],pQuest->RequiredItemCount[i]) )
                 return false;
 
@@ -13135,7 +13136,7 @@ bool Player::CanRewardQuest( Quest const *pQuest, bool msg )
     // prevent receive reward with quest items in bank
     if ( pQuest->HasFlag( QUEST_TRINITY_FLAGS_DELIVER ) )
     {
-        for(int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
+        for(int i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; i++)
         {
             if( pQuest->RequiredItemCount[i]!= 0 &&
                 GetItemCount(pQuest->RequiredItemId[i]) < pQuest->RequiredItemCount[i] )
@@ -13246,7 +13247,7 @@ void Player::AddQuest(Quest const *pQuest, Object* questGiver)
 
         AddTimedQuest( quest_id );
         questStatusData.m_timer = limittime * 1000;
-        qtime = static_cast<uint32>(GameTime::GetGameTime()) + limittime;
+        qtime = static_cast<uint32>(WorldGameTime::GetGameTime()) + limittime;
     }
     else
         questStatusData.m_timer = 0;
@@ -13343,7 +13344,7 @@ void Player::RewardQuest(Quest const *pQuest, uint32 reward, Object* questGiver,
 
     uint32 quest_id = pQuest->GetQuestId();
 
-    for (int i = 0; i < QUEST_OBJECTIVES_COUNT; i++ )
+    for (int i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; i++ )
     {
         if ( pQuest->RequiredItemId[i] )
             DestroyItemCount( pQuest->RequiredItemId[i], pQuest->RequiredItemCount[i], true);
@@ -14078,7 +14079,7 @@ void Player::AdjustQuestRequiredItemCount( Quest const* pQuest )
 {
     if ( pQuest->HasFlag( QUEST_TRINITY_FLAGS_DELIVER ) )
     {
-        for(int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
+        for(int i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; i++)
         {
             uint32 reqitemcount = pQuest->RequiredItemCount[i];
             if( reqitemcount != 0 )
@@ -14159,7 +14160,7 @@ void Player::ItemAddedQuestCheck( uint32 entry, uint32 count )
         if( !qInfo || !qInfo->HasFlag( QUEST_TRINITY_FLAGS_DELIVER ) )
             continue;
 
-        for (int j = 0; j < QUEST_OBJECTIVES_COUNT; j++)
+        for (int j = 0; j < QUEST_ITEM_OBJECTIVES_COUNT; j++)
         {
             uint32 reqitem = qInfo->RequiredItemId[j];
             if ( reqitem == entry )
@@ -14174,8 +14175,8 @@ void Player::ItemAddedQuestCheck( uint32 entry, uint32 count )
 
                     SendQuestUpdateAddItem( qInfo, j, additemcount );
                 }
-                if ( CanCompleteQuest( questid ) )
-                    CompleteQuest( questid );
+                if (CanCompleteQuest(questid))
+                    CompleteQuest(questid);
                 return;
             }
         }
@@ -14196,7 +14197,7 @@ void Player::ItemRemovedQuestCheck( uint32 entry, uint32 count )
         if( !qInfo->HasFlag( QUEST_TRINITY_FLAGS_DELIVER ) )
             continue;
 
-        for (int j = 0; j < QUEST_OBJECTIVES_COUNT; j++)
+        for (int j = 0; j < QUEST_ITEM_OBJECTIVES_COUNT; j++)
         {
             uint32 reqitem = qInfo->RequiredItemId[j];
             if ( reqitem == entry )
@@ -14489,11 +14490,12 @@ bool Player::HasQuestForItem( uint32 itemid ) const
 
             // There should be no mixed ReqItem/ReqSource drop
             // This part for ReqItem drop
-            for (int j = 0; j < QUEST_OBJECTIVES_COUNT; j++)
+            for (int j = 0; j < QUEST_ITEM_OBJECTIVES_COUNT; j++)
             {
                 if(itemid == qinfo->RequiredItemId[j] && q_status.ItemCount[j] < qinfo->RequiredItemCount[j] )
                     return true;
             }
+
             // This part - for ReqSource
             for (int j = 0; j < QUEST_SOURCE_ITEM_IDS_COUNT; j++)
             {
@@ -14918,7 +14920,7 @@ bool Player::LoadFromDB( uint32 guid, SQLQueryHolder *holder )
     InitPrimaryProffesions();                               // to max set before any spell loaded
 
     // init saved position, and fix it later if problematic
-    uint32 transGUIDLow = fields[LOAD_DATA_TRANSGUID].GetUInt64();
+    uint32 transGUIDLow = fields[LOAD_DATA_TRANSGUID].GetUInt32();
     uint32 mapId = fields[LOAD_DATA_MAP].GetUInt32();
     uint32 instanceId = fields[LOAD_DATA_INSTANCE_ID].GetUInt32();
 
@@ -15280,8 +15282,8 @@ bool Player::LoadFromDB( uint32 guid, SQLQueryHolder *holder )
     // this must help in case next save after mass player load after server startup
     m_nextSave = urand(m_nextSave / 2, m_nextSave * 3 / 2);
 
-    time_t now = GameTime::GetGameTime();
-    time_t logoutTime = time_t(fields[LOAD_DATA_LOGOUT_TIME].GetUInt64());
+    time_t now = map->GetGameTime();
+    time_t logoutTime = time_t(fields[LOAD_DATA_LOGOUT_TIME].GetUInt32());
 
     // since last logout (in seconds)
     uint64 time_diff = uint64(now - logoutTime);
@@ -15299,7 +15301,7 @@ bool Player::LoadFromDB( uint32 guid, SQLQueryHolder *holder )
     m_Played_time[1]= fields[LOAD_DATA_LEVELTIME].GetUInt32();
 
     m_resetTalentsCost = fields[LOAD_DATA_RESETTALENTS_COST].GetUInt32();
-    m_resetTalentsTime = time_t(fields[LOAD_DATA_RESETTALENTS_TIME].GetUInt64());
+    m_resetTalentsTime = time_t(fields[LOAD_DATA_RESETTALENTS_TIME].GetUInt32());
 
     // reserve some flags
     uint32 old_safe_flags = GetUInt32Value(PLAYER_FLAGS) & ( PLAYER_FLAGS_HIDE_CLOAK | PLAYER_FLAGS_HIDE_HELM );
@@ -15366,7 +15368,7 @@ bool Player::LoadFromDB( uint32 guid, SQLQueryHolder *holder )
     //speed collect rest bonus in offline, in logout, in tavern, city (section/in hour)
     float bubble1 = 0.125;
 
-    if((int32)fields[LOAD_DATA_LOGOUT_TIME].GetUInt64() > 0)
+    if((int32)fields[LOAD_DATA_LOGOUT_TIME].GetUInt32() > 0)
     {
         float bubble = fields[LOAD_DATA_IS_LOGOUT_RESTING].GetUInt8() > 0
             ? bubble1*sWorld->GetRate(RATE_REST_OFFLINE_IN_TAVERN_OR_CITY)
@@ -16191,10 +16193,10 @@ void Player::_LoadQuestStatus(PreparedQueryResult result)
                 {
                     AddTimedQuest( quest_id );
 
-                    if (quest_time <= GameTime::GetGameTime())
+                    if (quest_time <= WorldGameTime::GetGameTime())
                         questStatusData.m_timer = 1;
                     else
-                        questStatusData.m_timer = (quest_time - GameTime::GetGameTime()) * 1000;
+                        questStatusData.m_timer = (quest_time - WorldGameTime::GetGameTime()) * 1000;
                 }
                 else
                     quest_time = 0;
@@ -16497,7 +16499,7 @@ void Player::SendRaidInfo()
 
     data << counter;
 
-    time_t now = GameTime::GetGameTime();
+    time_t now = WorldGameTime::GetGameTime();
 
     for(i = 0; i < MAX_DIFFICULTY; i++)
     {
@@ -16509,28 +16511,22 @@ void Player::SendRaidInfo()
                 uint32 nextReset = save->GetResetTime() - now;
 
                 data << (save->GetMapId());
-                if (GetSession()->GetClientBuild() == BUILD_335)
-                {
-                    data << uint32(save->GetDifficulty());                     // difficulty
-                    data << uint64(save->GetInstanceId());                     // instance id
-                    /* TODO LK
-                    data << uint8(bind.extendState != EXTEND_STATE_EXPIRED);   // expired = 0
-                    data << uint8(bind.extendState == EXTEND_STATE_EXTENDED);  // extended = 1
-                    time_t nextReset = save->GetResetTime();
-                    if (bind.extendState == EXTEND_STATE_EXTENDED) {
-                        nextReset = sInstanceSaveMgr->GetSubsequentResetTime(save->GetMapId(), save->GetDifficulty(), save->GetResetTime());
-                    }
-                    data << uint32(nextReset);                // reset time
-                    */
-                    data << uint8(0);
-                    data << uint8(0);
-                    data << uint32(0);
-                } else {
-                    data << uint32(nextReset);
-                    data << uint32(save->GetInstanceId());
-                    data << uint32(counter);
-                    counter--;
+#ifdef LICH_KING
+                data << uint32(save->GetDifficulty());                     // difficulty
+                data << uint64(save->GetInstanceId());                     // instance id
+                data << uint8(bind.extendState != EXTEND_STATE_EXPIRED);   // expired = 0
+                data << uint8(bind.extendState == EXTEND_STATE_EXTENDED);  // extended = 1
+                time_t nextReset = save->GetResetTime();
+                if (bind.extendState == EXTEND_STATE_EXTENDED) {
+                    nextReset = sInstanceSaveMgr->GetSubsequentResetTime(save->GetMapId(), save->GetDifficulty(), save->GetResetTime());
                 }
+                data << uint32(nextReset);                // reset time
+#else
+                data << uint32(nextReset);
+                data << uint32(save->GetInstanceId());
+                data << uint32(counter);
+                counter--;
+#endif
             }
         }
     }
@@ -16827,7 +16823,7 @@ void Player::SaveToDB(bool create /*=false*/)
         stmt->setUInt32(index++, m_Played_time[PLAYED_TIME_TOTAL]);
         stmt->setUInt32(index++, m_Played_time[PLAYED_TIME_LEVEL]);
         stmt->setFloat(index++, finiteAlways(m_rest_bonus));
-        stmt->setUInt32(index++, uint32(GameTime::GetGameTime()));
+        stmt->setUInt32(index++, uint32(WorldGameTime::GetGameTime()));
         stmt->setUInt8(index++, (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) ? 1 : 0));
         //save, far from tavern/city
         //save, but in tavern/city
@@ -16960,7 +16956,7 @@ void Player::SaveToDB(bool create /*=false*/)
         stmt->setUInt32(index++, m_Played_time[PLAYED_TIME_TOTAL]);
         stmt->setUInt32(index++, m_Played_time[PLAYED_TIME_LEVEL]);
         stmt->setFloat(index++, finiteAlways(m_rest_bonus));
-        stmt->setUInt32(index++, uint32(GameTime::GetGameTime()));
+        stmt->setUInt32(index++, uint32(WorldGameTime::GetGameTime()));
         stmt->setUInt8(index++, (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) ? 1 : 0));
         //save, far from tavern/city
         //save, but in tavern/city
@@ -17382,11 +17378,11 @@ void Player::_SaveQuestStatus(SQLTransaction trans)
             case QUEST_NEW :
                 trans->PAppend("INSERT INTO character_queststatus (guid,quest,status,rewarded,explored,timer,mobcount1,mobcount2,mobcount3,mobcount4,itemcount1,itemcount2,itemcount3,itemcount4) "
                     "VALUES ('%u', '%u', '%u', '%u', '%u', '" UI64FMTD "', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u')",
-                    GetGUID().GetCounter(), m_QuestStatu.first, m_QuestStatu.second.Status, m_QuestStatu.second.Rewarded, m_QuestStatu.second.Explored, uint64(m_QuestStatu.second.m_timer / 1000 + GameTime::GetGameTime()), m_QuestStatu.second.CreatureOrGOCount[0], m_QuestStatu.second.CreatureOrGOCount[1], m_QuestStatu.second.CreatureOrGOCount[2], m_QuestStatu.second.CreatureOrGOCount[3], m_QuestStatu.second.ItemCount[0], m_QuestStatu.second.ItemCount[1], m_QuestStatu.second.ItemCount[2], m_QuestStatu.second.ItemCount[3]);
+                    GetGUID().GetCounter(), m_QuestStatu.first, m_QuestStatu.second.Status, m_QuestStatu.second.Rewarded, m_QuestStatu.second.Explored, uint64(m_QuestStatu.second.m_timer / 1000 + WorldGameTime::GetGameTime()), m_QuestStatu.second.CreatureOrGOCount[0], m_QuestStatu.second.CreatureOrGOCount[1], m_QuestStatu.second.CreatureOrGOCount[2], m_QuestStatu.second.CreatureOrGOCount[3], m_QuestStatu.second.ItemCount[0], m_QuestStatu.second.ItemCount[1], m_QuestStatu.second.ItemCount[2], m_QuestStatu.second.ItemCount[3]);
                 break;
             case QUEST_CHANGED :
                 trans->PAppend("UPDATE character_queststatus SET status = '%u',rewarded = '%u',explored = '%u',timer = '" UI64FMTD "',mobcount1 = '%u',mobcount2 = '%u',mobcount3 = '%u',mobcount4 = '%u',itemcount1 = '%u',itemcount2 = '%u',itemcount3 = '%u',itemcount4 = '%u'  WHERE guid = '%u' AND quest = '%u' ",
-                    m_QuestStatu.second.Status, m_QuestStatu.second.Rewarded, m_QuestStatu.second.Explored, uint64(m_QuestStatu.second.m_timer / 1000 + GameTime::GetGameTime()), m_QuestStatu.second.CreatureOrGOCount[0], m_QuestStatu.second.CreatureOrGOCount[1], m_QuestStatu.second.CreatureOrGOCount[2], m_QuestStatu.second.CreatureOrGOCount[3], m_QuestStatu.second.ItemCount[0], m_QuestStatu.second.ItemCount[1], m_QuestStatu.second.ItemCount[2], m_QuestStatu.second.ItemCount[3], GetGUID().GetCounter(), m_QuestStatu.first );
+                    m_QuestStatu.second.Status, m_QuestStatu.second.Rewarded, m_QuestStatu.second.Explored, uint64(m_QuestStatu.second.m_timer / 1000 + WorldGameTime::GetGameTime()), m_QuestStatu.second.CreatureOrGOCount[0], m_QuestStatu.second.CreatureOrGOCount[1], m_QuestStatu.second.CreatureOrGOCount[2], m_QuestStatu.second.CreatureOrGOCount[3], m_QuestStatu.second.ItemCount[0], m_QuestStatu.second.ItemCount[1], m_QuestStatu.second.ItemCount[2], m_QuestStatu.second.ItemCount[3], GetGUID().GetCounter(), m_QuestStatu.first );
                 break;
             case QUEST_UNCHANGED:
                 break;
@@ -19135,7 +19131,7 @@ void Player::UpdatePvP(bool state, bool ovrride)
     else
     {
         if(pvpInfo.endTimer != 0)
-            pvpInfo.endTimer = GameTime::GetGameTime();
+            pvpInfo.endTimer = WorldGameTime::GetGameTime();
         else
         {
             SetPvP(state);
@@ -19865,14 +19861,6 @@ void Player::SendInitialPacketsBeforeAddToMap()
     GetZoneAndAreaId(newzone, newarea);
     UpdateZone(newzone, newarea);
 
-    data.Initialize(SMSG_LOGIN_SETTIMESPEED, 8);
-    data << uint32(secsToTimeBitFields(GameTime::GetGameTime()));
-    data << float(0.01666667f);                             // game speed
-#ifdef LICH_KING
-    data << uint32(0);                                      // added in 3.1.2
-#endif
-    SendDirectMessage( &data );
-
     // set fly flag if in fly form or taxi flight to prevent visually drop at ground in showup moment
     if(HasAuraType(SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED) || IsInFlight())
         AddUnitMovementFlag(MOVEMENTFLAG_PLAYER_FLYING);
@@ -20049,7 +20037,7 @@ void Player::ApplyEquipCooldown( Item * pItem )
     if (pItem->GetTemplate()->Flags & ITEM_FLAG_NO_EQUIP_COOLDOWN)
         return;
 
-    std::chrono::steady_clock::time_point now = GameTime::GetGameTimeSteadyPoint();
+    std::chrono::steady_clock::time_point now = WorldGameTime::GetGameTimeSteadyPoint();
     for(const auto & spellData : pItem->GetTemplate()->Spells)
     {
         // no spell
@@ -20772,7 +20760,7 @@ void Player::SetDailyQuestStatus( uint32 quest_id )
         if(!GetUInt32Value(PLAYER_FIELD_DAILY_QUESTS_1+quest_daily_idx))
         {
             SetUInt32Value(PLAYER_FIELD_DAILY_QUESTS_1+quest_daily_idx,quest_id);
-            m_lastDailyQuestTime = GameTime::GetGameTime();              // last daily quest time
+            m_lastDailyQuestTime = WorldGameTime::GetGameTime();              // last daily quest time
             m_DailyQuestChanged = true;
             break;
         }
@@ -21084,7 +21072,7 @@ void Player::UpdateForQuestWorldObjects()
 
 void Player::SetSummonPoint(uint32 mapid, float x, float y, float z)
 {
-    m_summon_expire = GameTime::GetGameTime() + MAX_PLAYER_SUMMON_DELAY;
+    m_summon_expire = WorldGameTime::GetGameTime() + MAX_PLAYER_SUMMON_DELAY;
     m_summon_mapid = mapid;
     m_summon_x = x;
     m_summon_y = y;
@@ -21095,7 +21083,7 @@ void Player::SetSummonPoint(uint32 mapid, float x, float y, float z)
 void Player::SummonIfPossible(bool agree)
 {
     // expire and auto declined
-    if(m_summon_expire < GameTime::GetGameTime())
+    if(m_summon_expire < WorldGameTime::GetGameTime())
         return;
 
     if(!agree)
@@ -21119,7 +21107,7 @@ void Player::SummonIfPossible(bool agree)
 
 void Player::UpdateSummonExpireTime() 
 { 
-    m_summon_expire = GameTime::GetGameTime() + MAX_PLAYER_SUMMON_DELAY; 
+    m_summon_expire = WorldGameTime::GetGameTime() + MAX_PLAYER_SUMMON_DELAY; 
 }
 
 void Player::RemoveItemDurations( Item *item )
@@ -21589,7 +21577,7 @@ uint32 Player::GetCorpseReclaimDelay(bool pvp) const
     else if(!sWorld->getConfig(CONFIG_DEATH_CORPSE_RECLAIM_DELAY_PVE) )
         return 0;
 
-    time_t now = GameTime::GetGameTime();
+    time_t now = GetMap()->GetGameTime();
     // 0..2 full period
     // should be ceil(x)-1 but not floor(x)
     uint32 count = (now < m_deathExpireTime - 1) ? (m_deathExpireTime - 1 - now)/DEATH_EXPIRE_STEP : 0;
@@ -21604,7 +21592,7 @@ void Player::UpdateCorpseReclaimDelay()
         (!pvp && !sWorld->getConfig(CONFIG_DEATH_CORPSE_RECLAIM_DELAY_PVE)) )
         return;
 
-    time_t now = GameTime::GetGameTime();
+    time_t now = GetMap()->GetGameTime();
     if(now < m_deathExpireTime)
     {
         // full and partly periods 1..3
@@ -21649,7 +21637,7 @@ int32 Player::CalculateCorpseReclaimDelay(bool load) const
 
         //time_t expected_time = corpse->GetGhostTime()+copseReclaimDelay[count];
         time_t expected_time = m_deathTime + copseReclaimDelay[count];
-        time_t now = GameTime::GetGameTime();
+        time_t now = GetMap()->GetGameTime();
 
         if (now >= expected_time)
             return -1;
@@ -21885,33 +21873,6 @@ void Player::HandleFall(MovementInfo const& movementInfo)
             //Z given by moveinfo, LastZ, FallTime, WaterZ, MapZ, Damage, Safefall reduction
             TC_LOG_DEBUG("entities.player", "FALLDAMAGE z=%f sz=%f pZ=%f FallTime=%d mZ=%f damage=%d SF=%d", movementInfo.pos.GetPositionZ(), height, GetPositionZ(), movementInfo.fallTime, height, damage, safe_fall);
         }
-    }
-}
-
-void Player::HandleFallUnderMap()
-{
-    if(InBattleground()
-        && GetBattleground()
-        && GetBattleground()->HandlePlayerUnderMap(this))
-    {
-        // do nothing, the handle already did if returned true
-    }
-    else
-    {
-        // NOTE: this is actually called many times while falling
-        // even after the player has been teleported away
-        // TODO: discard movement packets after the player is rooted
-        if(IsAlive())
-        {
-            EnvironmentalDamage(DAMAGE_FALL_TO_VOID, GetMaxHealth());
-            // change the death state to CORPSE to prevent the death timer from
-            // starting in the next player update
-            KillPlayer();
-            BuildPlayerRepop();
-        }
-
-        // cancel the death timer here if started
-        RepopAtGraveyard();
     }
 }
 
@@ -22972,7 +22933,7 @@ void Player::ResetTimeSync()
     m_timeSyncCounter = 0;
     m_timeSyncTimer = 0;
     m_timeSyncClient = 0;
-    m_timeSyncServer = GameTime::GetGameTimeMS();
+    m_timeSyncServer = WorldGameTime::GetGameTimeMS();
 }
 
 void Player::SendTimeSync()
@@ -22983,7 +22944,7 @@ void Player::SendTimeSync()
 
     // Schedule next sync in 10 sec
     m_timeSyncTimer = 10000;
-    m_timeSyncServer = GameTime::GetGameTimeMS();
+    m_timeSyncServer = WorldGameTime::GetGameTimeMS();
 }
 
 void Player::ResummonPetTemporaryUnSummonedIfAny()
@@ -23484,4 +23445,25 @@ bool Player::IsTestingBot() const
 #else
     return nullptr;
 #endif
+}
+
+void Player::SaveSafePosition(Position pos)
+{
+    _lastSafePosition = pos;
+}
+
+bool Player::UndermapRecall()
+{
+    if (!_lastSafePosition.is_initialized() || IsBeingTeleported())
+        return false;
+
+    if (GetDistance2d(_lastSafePosition->GetPositionX(), _lastSafePosition->GetPositionY()) > 50.0f)
+    {
+        _lastSafePosition.reset();
+        return false;
+    }
+
+    NearTeleportTo(*_lastSafePosition, TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET);
+    _lastSafePosition.reset();
+    return true;
 }

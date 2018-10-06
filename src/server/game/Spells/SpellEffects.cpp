@@ -903,7 +903,7 @@ void Spell::EffectDummy(uint32 i)
                             if (!root->isSpawned())
                                 break;
                             _unitCaster->GetMotionMaster()->MovePoint(0, root->GetPositionX(), root->GetPositionY(), root->GetPositionZ());
-                            _unitCaster->SummonGameObject(187072, root->GetPosition(), G3D::Quat(), (root->GetRespawnTime() - GameTime::GetGameTime()));
+                            _unitCaster->SummonGameObject(187072, root->GetPosition(), G3D::Quat(), (root->GetRespawnTime() - _unitCaster->GetMap()->GetGameTime()));
                             root->SetLootState(GO_JUST_DEACTIVATED);
                         }
                         else
@@ -1269,7 +1269,7 @@ void Spell::EffectDummy(uint32 i)
                     creatureTarget->RemoveCorpse();
                     creatureTarget->SetHealth(0);                   // just for nice GM-mode view
 
-                    GameObject* Crystal_Prison = m_caster->SummonGameObject(179644, creatureTarget->GetPosition(), G3D::Quat(), creatureTarget->GetRespawnTime() - GameTime::GetGameTime());
+                    GameObject* Crystal_Prison = m_caster->SummonGameObject(179644, creatureTarget->GetPosition(), G3D::Quat(), creatureTarget->GetRespawnTime() - creatureTarget->GetMap()->GetGameTime());
                     WorldPacket data(SMSG_GAMEOBJECT_SPAWN_ANIM_OBSOLETE, 8);
                     data << uint64(Crystal_Prison->GetGUID());
                     m_caster->SendMessageToSet(&data,true);
@@ -3966,15 +3966,13 @@ void Spell::EffectProficiency(uint32 /*i*/)
     if(m_spellInfo->EquippedItemClass == ITEM_CLASS_WEAPON && !(p_target->GetWeaponProficiency() & subClassMask))
     {
         p_target->AddWeaponProficiency(subClassMask);
-        if (p_target->IsInWorld()) //sun: else this is sent at character creation
-            p_target->SendProficiency(uint8(ITEM_CLASS_WEAPON), p_target->GetWeaponProficiency());
+        p_target->SendProficiency(uint8(ITEM_CLASS_WEAPON), p_target->GetWeaponProficiency());
     }
 
     if(m_spellInfo->EquippedItemClass == ITEM_CLASS_ARMOR && !(p_target->GetArmorProficiency() & subClassMask))
     {
         p_target->AddArmorProficiency(subClassMask);
-        if (p_target->IsInWorld()) //sun: else this is sent at character creation
-            p_target->SendProficiency(uint8(ITEM_CLASS_ARMOR), p_target->GetArmorProficiency());
+        p_target->SendProficiency(uint8(ITEM_CLASS_ARMOR), p_target->GetArmorProficiency());
     }
 }
 
@@ -4630,7 +4628,7 @@ void Spell::EffectSummonPet(uint32 effIndex)
 
     // this enables popup window (pet dismiss, cancel), hunter pet additional flags set later
     pet->SetUInt32Value(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
-    pet->SetUInt32Value(UNIT_FIELD_PET_NAME_TIMESTAMP, GameTime::GetGameTime());
+    pet->SetUInt32Value(UNIT_FIELD_PET_NAME_TIMESTAMP, pet->GetMap()->GetGameTime());
 
     // generate new name for summon pet
     std::string new_name=sObjectMgr->GeneratePetName(petentry);
@@ -5067,35 +5065,10 @@ void Spell::EffectSummonObjectWild(uint32 i)
     }
     map->AddToMap(pGameObj, true);
 
-    if(pGameObj->GetMapId() == 489 && pGameObj->GetGoType() == GAMEOBJECT_TYPE_FLAGDROP)  //WS
-    {
-        if(m_caster->GetTypeId() == TYPEID_PLAYER)
-        {
-            Player *pl = m_caster->ToPlayer();
-            Battleground* bg = (m_caster->ToPlayer())->GetBattleground();
-            if(bg && bg->GetTypeID()==BATTLEGROUND_WS && bg->GetStatus() == STATUS_IN_PROGRESS)
-            {
-                 uint32 team = ALLIANCE;
-
-                 if(pl->GetTeam() == team)
-                     team = HORDE;
-
-                ((BattlegroundWS*)bg)->SetDroppedFlagGUID(pGameObj->GetGUID(),team);
-            }
-        }
-    }
-
-    if(pGameObj->GetMapId() == 566 && pGameObj->GetGoType() == GAMEOBJECT_TYPE_FLAGDROP)  //EY
-    {
-        if(m_caster->GetTypeId() == TYPEID_PLAYER)
-        {
-            Battleground* bg = (m_caster->ToPlayer())->GetBattleground();
-            if(bg && bg->GetTypeID()==BATTLEGROUND_EY && bg->GetStatus() == STATUS_IN_PROGRESS)
-            {
-                ((BattlegroundEY*)bg)->SetDroppedFlagGUID(pGameObj->GetGUID());
-            }
-        }
-    }
+    if (pGameObj->GetGoType() == GAMEOBJECT_TYPE_FLAGDROP)
+        if (Player* player = m_caster->ToPlayer())
+            if (Battleground* bg = player->GetBattleground())
+                bg->SetDroppedFlagGUID(pGameObj->GetGUID(), player->GetTeam() == ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE);
 
     if(uint32 linkedEntry = pGameObj->GetLinkedGameObjectEntry())
     {
@@ -5958,7 +5931,7 @@ void Spell::EffectSanctuary(uint32 /*i*/)
         _unitCaster->RemoveAurasByType(SPELL_AURA_MOD_ROOT);
 
     // makes spells cast before this time fizzle
-    unitTarget->m_lastSanctuaryTime = GameTime::GetGameTimeMS();
+    unitTarget->m_lastSanctuaryTime = unitTarget->GetMap()->GetGameTimeMS();
 }
 
 void Spell::EffectAddComboPoints(uint32 /*i*/)
@@ -7113,7 +7086,7 @@ void Spell::EffectTransmitted(uint32 effIndex)
         destTarget->GetPosition(fx, fy, fz);
     }
     //FIXME: this can be better check for most objects but still hack
-    else if(m_spellInfo->Effects[effIndex].RadiusEntry->ID && m_spellInfo->Speed==0)
+    else if(m_spellInfo->Effects[effIndex].RadiusEntry && m_spellInfo->Effects[effIndex].RadiusEntry->ID && m_spellInfo->Speed==0)
     {
         float dis = m_spellInfo->Effects[effIndex].CalcRadius(_unitCaster->GetSpellModOwner(), this);
         _unitCaster->GetClosePoint(fx, fy, fz, DEFAULT_PLAYER_BOUNDING_RADIUS, dis);
@@ -7129,7 +7102,7 @@ void Spell::EffectTransmitted(uint32 effIndex)
 
     Map *cMap = m_caster->GetMap();
 
-    if(goinfo->type==GAMEOBJECT_TYPE_FISHINGNODE)
+    if (goinfo->type == GAMEOBJECT_TYPE_FISHINGNODE)
     {
         LiquidData liqData;
         // uint32 area_id = m_caster->GetAreaId();
@@ -7170,10 +7143,6 @@ void Spell::EffectTransmitted(uint32 effIndex)
         case GAMEOBJECT_TYPE_FISHINGNODE:
         {
             _unitCaster->SetChannelObjectGuid(pGameObj->GetGUID());
-                                                            // Orientation3
-            pGameObj->SetFloatValue(GAMEOBJECT_PARENTROTATION + 2, 0.88431775569915771 );
-                                                            // Orientation4
-            pGameObj->SetFloatValue(GAMEOBJECT_PARENTROTATION + 3, -0.4668855369091033 );
             _unitCaster->AddGameObject(pGameObj);              // will removed at spell cancel
 
             // end time of range when possible catch fish (FISHING_BOBBER_READY_TIME..GetDuration(m_spellInfo))

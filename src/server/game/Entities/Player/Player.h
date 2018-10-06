@@ -228,6 +228,7 @@ struct PlayerInfo
         positionZ = 0.0f;
         positionX = 0.0f;
         positionY = 0.0f;
+        positionO = 0.0f;
         mapId = 0;
         areaId = 0;
     }
@@ -237,6 +238,7 @@ struct PlayerInfo
     float positionX;
     float positionY;
     float positionZ;
+    float positionO;
     uint16 displayId_m;
     uint16 displayId_f;
     PlayerCreateInfoItems item;
@@ -2304,6 +2306,12 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
 
         void SendCinematicStart(uint32 CinematicSequenceId) const;
         void SendMovieStart(uint32 MovieId) const;
+
+        // Anti Undermap
+        void SaveSafePosition(Position pos);
+        bool UndermapRecall();
+
+        Optional<Position> _lastSafePosition;
 
         /*********************************************************/
         /***                 INSTANCE SYSTEM                   ***/

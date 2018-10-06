@@ -48,10 +48,8 @@ class BattlegroundNA : public Battleground
         void RemovePlayer(Player *plr, ObjectGuid guid);
         void HandleAreaTrigger(Player *Source, uint32 Trigger);
         bool SetupBattleground();
-        virtual void ResetBGSubclass();
         virtual void FillInitialWorldStates(WorldPacket &d);
         void HandleKillPlayer(Player* player, Player *killer);
-        bool HandlePlayerUnderMap(Player * plr);
 };
 #endif
 

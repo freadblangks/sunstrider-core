@@ -13,9 +13,14 @@ addons:
   apt:
     sources:
       - ubuntu-toolchain-r-test
-      - sourceline: 'ppa:kzemek/boost'
+	  - sourceline: 'ppa:kzemek/boost'
     packages:
       - g++-6
+      - libssl-dev
+      - libmariadbclient-dev 
+      - libreadline6-dev
+      - zlib1g-dev
+      - libbz2-dev
       - libboost1.58-dev
       - libboost-filesystem1.58-dev
       - libboost-iostreams1.58-dev
@@ -23,11 +28,6 @@ addons:
       - libboost-regex1.58-dev
       - libboost-system1.58-dev
       - libboost-thread1.58-dev
-      - libssl-dev
-      - libmariadbclient-dev 
-      - libreadline6-dev
-      - zlib1g-dev
-      - libbz2-dev
       # For data archive
       - p7zip
       # For post run debug
@@ -41,12 +41,17 @@ before_install:
   - ulimit -a -S
   - ulimit -a -H
   - cat /proc/sys/kernel/core_pattern
+  # More recent cmake
+  - sudo apt-get remove cmake
+  - sudo mkdir /opt/cmake
+  - wget https://cmake.org/files/v3.11/cmake-3.11.4-Linux-x86_64.sh
+  - sudo sh cmake-3.11.4-Linux-x86_64.sh --prefix=/opt/cmake --skip-license
  
 install:
   - mysql -uroot -e 'create database test_mysql'
   - mkdir bin logs data
   - cd bin
-  - cmake ../ -DPLAYERBOT=1 -DTOOLS=1 -DSCRIPTS=static -DTESTS=1 -DCMAKE_BUILD_TYPE=Release -DDO_DEBUG=1 -DCMAKE_INSTALL_PREFIX=check_install
+  - /opt/cmake/bin/cmake ../ -DPLAYERBOT=1 -DTOOLS=1 -DSCRIPTS=static -DTESTS=1 -DCMAKE_BUILD_TYPE=Release -DDO_DEBUG=1 -DCMAKE_INSTALL_PREFIX=check_install
   - cd ..
 
 script:

@@ -49,7 +49,12 @@ void EscortAI::FailQuest()
 
 void EscortAI::JustDied(Unit* /*killer*/)
 {
-    if (!HasEscortState(STATE_ESCORT_ESCORTING) || !_playerGUID || !_escortQuest)
+    if (!HasEscortState(STATE_ESCORT_ESCORTING))
+        return;
+
+    RemoveEscortState(STATE_ESCORT_ESCORTING); //sun: remove escort state on death
+
+    if (!_playerGUID || !_escortQuest)
         return;
 
     FailQuest();
@@ -57,6 +62,8 @@ void EscortAI::JustDied(Unit* /*killer*/)
 
 void EscortAI::InitializeAI()
 {
+    UnitAI::InitializeAI();
+
     _escortState = STATE_ESCORT_NONE;
 
     if (!IsCombatMovementAllowed())
@@ -88,7 +95,6 @@ void EscortAI::EnterEvadeMode(EvadeReason /* why */)
     {
         AddEscortState(STATE_ESCORT_RETURNING);
         ReturnToLastPoint();
-
     } 
     else
     {

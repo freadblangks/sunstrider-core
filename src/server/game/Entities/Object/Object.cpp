@@ -34,6 +34,7 @@
 #include "SpellAuraEffects.h"
 #include "TotemAI.h"
 #include "ReputationMgr.h"
+#include "Spell.h"
 
 #include "TemporarySummon.h"
 #include "DynamicTree.h"
@@ -167,6 +168,7 @@ void Object::BuildCreateUpdateBlockForPlayer(UpdateData *data, Player *target) c
         flags |=  UPDATEFLAG_SELF;
 
 
+    //sun: diff with tc, we send UPDATETYPE_CREATE_OBJECT2 for almost all new objects. Not 100% sure about this but this seems to make more sense
     if (m_isNewObject)
     {
         switch (ObjectGuid(GetGUID()).GetHigh())
@@ -175,16 +177,11 @@ void Object::BuildCreateUpdateBlockForPlayer(UpdateData *data, Player *target) c
         case HighGuid::Pet:
         case HighGuid::Corpse:
         case HighGuid::DynamicObject:
-        case HighGuid::GameObject: //sun: diff with TC, we send this for all gobjects, not just player ones. Not 100% sure about this but this seems to make more sense
-            updateType = UPDATETYPE_CREATE_OBJECT2;
-            break;
+        case HighGuid::GameObject: 
         case HighGuid::Unit:
         case HighGuid::Vehicle:
-        {
-            if (ToUnit()->IsSummon())
-                updateType = UPDATETYPE_CREATE_OBJECT2;
+            updateType = UPDATETYPE_CREATE_OBJECT2;
             break;
-        }
         default:
             break;
         }
@@ -192,27 +189,12 @@ void Object::BuildCreateUpdateBlockForPlayer(UpdateData *data, Player *target) c
 
     if(flags & UPDATEFLAG_STATIONARY_POSITION)
     {
-        // UPDATETYPE_CREATE_OBJECT2 for some gameobject types...
-        if(isType(TYPEMASK_GAMEOBJECT))
-        {
-            switch(((GameObject*)this)->GetGoType())
-            {
-                case GAMEOBJECT_TYPE_TRAP:
-                case GAMEOBJECT_TYPE_DUEL_ARBITER:
-                case GAMEOBJECT_TYPE_FLAGSTAND:
-                case GAMEOBJECT_TYPE_FLAGDROP:
-                    updateType = UPDATETYPE_CREATE_OBJECT2;
-                    break;
-                case GAMEOBJECT_TYPE_TRANSPORT:
 #ifndef LICH_KING
-                    updateType |= UPDATEFLAG_TRANSPORT;
+        //not sure this is still needed
+        if(isType(TYPEMASK_GAMEOBJECT) && ToGameObject()->GetGoType() == GAMEOBJECT_TYPE_TRANSPORT)
+            updateType |= UPDATEFLAG_TRANSPORT;
 #endif
-                    break;
-                default:
-                    break;
-            }
-        }
-
+      
         if (isType(TYPEMASK_UNIT))
         {
             if (ToUnit()->GetVictim())
@@ -224,12 +206,7 @@ void Object::BuildCreateUpdateBlockForPlayer(UpdateData *data, Player *target) c
 
     ByteBuffer buf(500);
     buf << (uint8)updateType;
-#ifdef LICH_KING
     buf << GetPackGUID();
-#else
-    buf << (uint8)0xFF << GetGUID();
-#endif
-
     buf << (uint8)m_objectTypeId;
 
     BuildMovementUpdate(&buf, flags);
@@ -242,10 +219,7 @@ void Object::BuildValuesUpdateBlockForPlayer(UpdateData *data, Player *target) c
     ByteBuffer buf(500);
 
     buf << (uint8) UPDATETYPE_VALUES;
-    if(target->GetSession()->GetClientBuild() == BUILD_335)
-        buf << GetPackGUID();
-    else
-        buf << (uint8)0xFF << GetGUID();
+    buf << GetPackGUID();
 
     BuildValuesUpdate(UPDATETYPE_VALUES, &buf, target );
 
@@ -384,9 +358,6 @@ ObjectGuid Object::GetGuidValue(uint16 index) const
 
 void Object::BuildValuesUpdate(uint8 updateType, ByteBuffer * data, Player *target) const
 {
-    if(!target)
-        return;
-
     if (!target)
         return;
 
@@ -1327,13 +1298,10 @@ void WorldObject::UpdateAllowedPositionZ(float x, float y, float &z, float maxDi
     }
 
     Position pos = GetPosition();
-    float newZ = z + GetCollisionHeight();
-    WorldObject::UpdateAllowedPositionZ(GetPhaseMask(), GetMapId(), x, y, newZ, canSwim, canFly, waterWalk, maxDist);
-    if (newZ != z + GetCollisionHeight())
-        z = newZ;
+    WorldObject::UpdateAllowedPositionZ(GetPhaseMask(), GetMapId(), x, y, z, canSwim, canFly, waterWalk, GetCollisionHeight(), maxDist);
 }
 
-void WorldObject::UpdateAllowedPositionZ(uint32 phaseMask, uint32 mapId, float x, float y, float &z, bool canSwim, bool canFly, bool waterWalk, float maxDist)
+void WorldObject::UpdateAllowedPositionZ(uint32 phaseMask, uint32 mapId, float x, float y, float &z, bool canSwim, bool canFly, bool waterWalk, float collisionHeight, float maxDist)
 {
     // non fly unit don't must be in air
     // non swim unit must be at ground (mostly speedup, because it don't must be in water and water level check less fast
@@ -1342,7 +1310,7 @@ void WorldObject::UpdateAllowedPositionZ(uint32 phaseMask, uint32 mapId, float x
     {
         float ground_z = z;
         float max_z = canSwim
-            ? baseMap->GetWaterOrGroundLevel(phaseMask, x, y, z, &ground_z, !waterWalk)
+            ? baseMap->GetWaterOrGroundLevel(phaseMask, x, y, z, &ground_z, !waterWalk, collisionHeight)
             : ((ground_z = baseMap->GetHeight(phaseMask, x, y, z, true)));
 
         if (max_z > INVALID_HEIGHT)
@@ -2505,7 +2473,7 @@ void Object::BuildMovementUpdate(ByteBuffer* data, uint16 flags) const
 
     // 0x80
 #ifdef LICH_KING
-    if ((build == BUILD_335) && flags & UPDATEFLAG_VEHICLE)
+    if (flags & UPDATEFLAG_VEHICLE)
     {
         /// @todo Allow players to aquire this updateflag.
         *data << uint32(unit->GetVehicleKit()->GetVehicleInfo()->m_ID);

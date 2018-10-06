@@ -143,12 +143,6 @@ void BattlegroundRL::HandleKillPlayer(Player *player, Player *killer)
     }
 }
 
-bool BattlegroundRL::HandlePlayerUnderMap(Player *player)
-{
-    player->TeleportTo(GetMapId(),1285.810547,1667.896851,39.957642,player->GetOrientation(),false);
-    return true;
-}
-
 void BattlegroundRL::HandleAreaTrigger(Player *Source, uint32 Trigger)
 {
     // this is wrong way to implement these things. On official it done by gameobject spell cast.
@@ -177,11 +171,6 @@ void BattlegroundRL::FillInitialWorldStates(WorldPacket &data)
     data << uint32(0xbb8) << uint32(GetAlivePlayersCountByTeam(ALLIANCE));           // 7
     data << uint32(0xbb9) << uint32(GetAlivePlayersCountByTeam(HORDE));           // 8
     data << uint32(0xbba) << uint32(1);           // 9
-}
-
-void BattlegroundRL::ResetBGSubclass()
-{
-
 }
 
 bool BattlegroundRL::SetupBattleground()

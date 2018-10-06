@@ -142,12 +142,6 @@ void BattlegroundNA::HandleKillPlayer(Player *player, Player *killer)
     }
 }
 
-bool BattlegroundNA::HandlePlayerUnderMap(Player *player)
-{
-    player->TeleportTo(GetMapId(),4055.504395,2919.660645,13.611241,player->GetOrientation(),false);
-    return true;
-}
-
 void BattlegroundNA::HandleAreaTrigger(Player *Source, uint32 Trigger)
 {
     if(GetStatus() != STATUS_IN_PROGRESS)
@@ -175,11 +169,6 @@ void BattlegroundNA::FillInitialWorldStates(WorldPacket &data)
     data << uint32(0xa0f) << uint32(GetAlivePlayersCountByTeam(ALLIANCE));           // 7
     data << uint32(0xa10) << uint32(GetAlivePlayersCountByTeam(HORDE));           // 8
     data << uint32(0xa11) << uint32(1);           // 9
-}
-
-void BattlegroundNA::ResetBGSubclass()
-{
-
 }
 
 bool BattlegroundNA::SetupBattleground()

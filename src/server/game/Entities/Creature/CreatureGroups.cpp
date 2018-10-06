@@ -48,9 +48,9 @@ uint32 FormationMgr::GetInternalGroupId(Creature const* leader)
     uint32 internalId = leader->GetSpawnId();
     if (!internalId)
     {
-        uint64 guid = leader->GetGUID().GetCounter();
-        if (guid + SUMMON_OFFSET > std::numeric_limits<ObjectGuid::LowType>::max()) //make sure we're not overflowing
-            return 0;
+        uint32 guid = leader->GetGUID().GetCounter();
+        if (uint64(guid) + SUMMON_OFFSET > std::numeric_limits<ObjectGuid::LowType>::max()) //make sure we're not overflowing
+            ABORT(); // FormationMgr::GetInternalGroupId Group internal id overflow
 
         internalId = SUMMON_OFFSET + guid;
     }
@@ -250,8 +250,12 @@ FormationInfo& CreatureGroup::AddMember(Creature* member)
         formationInfo = *dbFormationInfo;
     else
     { //generate default from current creature position. This is currently used by SMART_ACTION_ADD_TO_FORMATION
-        formationInfo.followAngle = _leader->GetAbsoluteAngle(member) - _leader->GetOrientation();
-        formationInfo.followDist  = sqrtf(pow(_leader->GetPositionX() - member->GetPositionX(), int(2)) + pow(_leader->GetPositionY() - member->GetPositionY(), int(2)));
+        if (_leader)
+        {
+            formationInfo.followAngle = _leader->GetAbsoluteAngle(member) - _leader->GetOrientation();
+            formationInfo.followDist = sqrtf(pow(_leader->GetPositionX() - member->GetPositionX(), int(2)) + pow(_leader->GetPositionY() - member->GetPositionY(), int(2)));
+        } else
+            TC_LOG_WARN("entities.unit", "CreatureGroup::AddMember Adding unit (GUID: %u) to group (%u) which has currently no leader. No follow dist/angles were generated.", member->GetGUID().GetCounter(), groupID);
     }
     //else we keep default values from FormationInfo constructor
 
@@ -351,6 +355,8 @@ bool CreatureGroup::CanLeaderStartMoving() const
     return true;
 }
 
+Creature* followedCreature2 = nullptr;
+
 void CreatureGroup::LeaderMoveTo(Position const& destination, uint32 id /*= 0*/, uint32 moveType /*= 0*/, bool orientation /*= false*/)
 {
     if (!_leader)
@@ -367,7 +373,7 @@ void CreatureGroup::LeaderMoveTo(Position const& destination, uint32 id /*= 0*/,
         if(member == _leader || !member->IsAlive() || member->IsEngaged() || formationInfo.groupAI == GROUP_AI_NONE)
             continue;
 
-        /*if (formationInfo.leaderWaypointIDs[0])
+        /*TC if (formationInfo.leaderWaypointIDs[0])
         {
             for (uint8 i = 0; i < 2; ++i)
             {
@@ -378,6 +384,9 @@ void CreatureGroup::LeaderMoveTo(Position const& destination, uint32 id /*= 0*/,
                 }
             }
         }*/
+
+        if (member == followedCreature2)
+            member = followedCreature2;
 
         FormationMoveSegment path(_leader->GetPosition(), destination, moveType, orientation, formationInfo.followAngle, formationInfo.followDist);
         member->GetMotionMaster()->MoveFormation(id, path, _leader);
