@@ -21,6 +21,7 @@
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
 
+
 enum Say
 {
     SAY_TELEPORT             = 0
@@ -174,7 +175,46 @@ class MarkOfFrostTargetSelector
         }
 };
 
+class spell_mark_of_frost : public SpellScriptLoader
+{
+    public:
+        spell_mark_of_frost() : SpellScriptLoader("spell_mark_of_frost") { }
+
+        class spell_mark_of_frost_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_mark_of_frost_SpellScript);
+
+            bool Validate(SpellInfo const* /*spellInfo*/) override
+            {
+                return ValidateSpellInfo({ SPELL_MARK_OF_FROST, SPELL_AURA_OF_FROST });
+            }
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                targets.remove_if(MarkOfFrostTargetSelector());
+            }
+
+            void HandleEffect(SpellEffIndex effIndex, int32& /*damage*/)
+            {
+                PreventHitDefaultEffect(effIndex);
+                GetHitUnit()->CastSpell(GetHitUnit(), SPELL_AURA_OF_FROST, true);
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_mark_of_frost_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+                OnEffectHitTarget += SpellEffectFn(spell_mark_of_frost_SpellScript::HandleEffect, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_mark_of_frost_SpellScript();
+        }
+};
+
 void AddSC_boss_azuregos()
 {
     new boss_azuregos();
+    new spell_mark_of_frost();
 }

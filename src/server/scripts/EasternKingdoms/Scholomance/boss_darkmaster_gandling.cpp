@@ -178,7 +178,7 @@ class spell_shadow_portal : public SpellScriptLoader
 				return false;
             }
 
-            void HandleCast(SpellEffIndex /*effIndex*/)
+            void HandleCast(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 Unit* caster = GetCaster();
                 uint8 attempts = 0;
@@ -229,7 +229,7 @@ class spell_shadow_portal : public SpellScriptLoader
 
             void Register() override
             {
-                //OnEffectHitTarget += SpellEffectFn(spell_shadow_portal_SpellScript::HandleCast, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_shadow_portal_SpellScript::HandleCast, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
 
             InstanceScript* _instance = nullptr;
@@ -301,7 +301,7 @@ class spell_shadow_portal_rooms : public SpellScriptLoader
 				return false;
             }
 
-            void HandleSendEvent(SpellEffIndex effIndex)
+            void HandleSendEvent(SpellEffIndex effIndex, int32& /*damage*/)
             {
                 // If only one player in threat list fail spell
 
@@ -365,7 +365,7 @@ class spell_shadow_portal_rooms : public SpellScriptLoader
 
             void Register() override
             {
-                //OnEffectHit += SpellEffectFn(spell_shadow_portal_rooms_SpellScript::HandleSendEvent, EFFECT_1, SPELL_EFFECT_SEND_EVENT);
+                 OnEffectHit += SpellEffectFn(spell_shadow_portal_rooms_SpellScript::HandleSendEvent, EFFECT_1, SPELL_EFFECT_SEND_EVENT);
             }
 
             InstanceScript* _instance = nullptr;

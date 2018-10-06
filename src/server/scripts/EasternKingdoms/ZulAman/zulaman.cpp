@@ -447,7 +447,7 @@ class spell_banging_the_gong : public SpellScriptLoader
         {
             PrepareSpellScript(spell_banging_the_gong_SpellScript);
 
-            void Activate(SpellEffIndex index)
+            void Activate(SpellEffIndex index, int32& /*damage*/)
             {
                 PreventHitDefaultEffect(index);
                 GetHitGObj()->SendCustomAnim(0);
@@ -455,7 +455,7 @@ class spell_banging_the_gong : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_banging_the_gong_SpellScript::Activate, EFFECT_1, SPELL_EFFECT_ACTIVATE_OBJECT);
+                OnEffectHitTarget += SpellEffectFn(spell_banging_the_gong_SpellScript::Activate, EFFECT_1, SPELL_EFFECT_ACTIVATE_OBJECT);
             }
         };
 

@@ -416,7 +416,7 @@ class spell_apothecary_lingering_fumes : public SpellScriptLoader
 
             }
 
-            void HandleScript(SpellEffIndex /*effindex*/)
+            void HandleScript(SpellEffIndex /*effindex*/, int32& /*damage*/)
             {
                 Unit* caster = GetCaster();
                 caster->CastSpell(GetHitUnit(), SPELL_VALIDATE_AREA, true);
@@ -425,7 +425,7 @@ class spell_apothecary_lingering_fumes : public SpellScriptLoader
             void Register() override
             {
                 AfterCast += SpellCastFn(spell_apothecary_lingering_fumes_SpellScript::HandleAfterCast);
-               //OnEffectHitTarget += SpellEffectFn(spell_apothecary_lingering_fumes_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_apothecary_lingering_fumes_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
@@ -457,7 +457,7 @@ class spell_apothecary_validate_area : public SpellScriptLoader
             }
 
 
-            void HandleScript(SpellEffIndex /*effindex*/)
+            void HandleScript(SpellEffIndex /*effindex*/, int32& /*damage*/)
             {
                 GetHitUnit()->CastSpell(GetHitUnit(), SPELL_BUNNY_LOCKDOWN, true);
                 GetCaster()->CastSpell(GetHitUnit(), RAND(SPELL_THROW_COLOGNE, SPELL_THROW_PERFUME), true);
@@ -466,7 +466,7 @@ class spell_apothecary_validate_area : public SpellScriptLoader
             void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_apothecary_validate_area_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_DEST_AREA_ENTRY);
-               //OnEffectHitTarget += SpellEffectFn(spell_apothecary_validate_area_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_apothecary_validate_area_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
@@ -486,14 +486,14 @@ class spell_apothecary_throw_cologne : public SpellScriptLoader
         {
             PrepareSpellScript(spell_apothecary_throw_cologne_SpellScript);
 
-            void HandleScript(SpellEffIndex /*effindex*/)
+            void HandleScript(SpellEffIndex /*effindex*/, int32& /*damage*/)
             {
                 GetHitUnit()->CastSpell(GetHitUnit(), SPELL_COLOGNE_SPILL, true);
             }
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_apothecary_throw_cologne_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_apothecary_throw_cologne_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
@@ -513,14 +513,14 @@ class spell_apothecary_throw_perfume : public SpellScriptLoader
         {
             PrepareSpellScript(spell_apothecary_throw_perfume_SpellScript);
 
-            void HandleScript(SpellEffIndex /*effindex*/)
+            void HandleScript(SpellEffIndex /*effindex*/, int32& /*damage*/)
             {
                 GetHitUnit()->CastSpell(GetHitUnit(), SPELL_PERFUME_SPILL, true);
             }
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_apothecary_throw_perfume_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_apothecary_throw_perfume_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 

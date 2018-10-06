@@ -214,7 +214,7 @@ class spell_najentus_needle_spine : public SpellScript
         targets.remove_if(Trinity::UnitAuraCheck(true, SPELL_IMPALING_SPINE));
     }
 
-    void HandleScript(SpellEffIndex /*effIndex*/)
+    void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         GetCaster()->CastSpell(GetHitUnit(), SPELL_NEEDLE_SPINE, true);
     }
@@ -222,7 +222,7 @@ class spell_najentus_needle_spine : public SpellScript
     void Register() override
     {
         OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_najentus_needle_spine::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-       //OnEffectHitTarget += SpellEffectFn(spell_najentus_needle_spine::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnEffectHitTarget += SpellEffectFn(spell_najentus_needle_spine::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 

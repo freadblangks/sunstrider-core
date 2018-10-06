@@ -435,14 +435,14 @@ class spell_direbrew_summon_mole_machine_target_picker : public SpellScript
         return ValidateSpellInfo({ SPELL_MOLE_MACHINE_MINION_SUMMONER });
     }
 
-    void HandleScriptEffect(SpellEffIndex /*effIndex*/)
+    void HandleScriptEffect(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         GetCaster()->CastSpell(GetHitUnit(), SPELL_MOLE_MACHINE_MINION_SUMMONER, true);
     }
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_direbrew_summon_mole_machine_target_picker::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+       OnEffectHitTarget += SpellEffectFn(spell_direbrew_summon_mole_machine_target_picker::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 
@@ -473,7 +473,7 @@ class spell_send_mug_target_picker : public SpellScript
         targets.push_back(target);
     }
 
-    void HandleDummy(SpellEffIndex /*effIndex*/)
+    void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         Unit* caster = GetCaster();
         caster->GetAI()->SetGUID(GetHitUnit()->GetGUID(), DATA_TARGET_GUID);
@@ -483,7 +483,7 @@ class spell_send_mug_target_picker : public SpellScript
     void Register() override
     {
         OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_send_mug_target_picker::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-       //OnEffectHitTarget += SpellEffectFn(spell_send_mug_target_picker::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnEffectHitTarget += SpellEffectFn(spell_send_mug_target_picker::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 
@@ -497,14 +497,14 @@ class spell_request_second_mug : public SpellScript
         return ValidateSpellInfo({ SPELL_SEND_SECOND_MUG });
     }
 
-    void HandleScriptEffect(SpellEffIndex /*effIndex*/)
+    void HandleScriptEffect(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         GetHitUnit()->CastSpell(GetCaster(), SPELL_SEND_SECOND_MUG, true);
     }
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_request_second_mug::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+       OnEffectHitTarget += SpellEffectFn(spell_request_second_mug::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 

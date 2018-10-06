@@ -207,7 +207,7 @@ class spell_blackheart_incite_chaos : public SpellScript
     static const uint8 NUM_INCITE_SPELLS = 5;
     static const uint32 INCITE_SPELLS[NUM_INCITE_SPELLS];
     uint8 i=0;
-    void HandleDummy(SpellEffIndex /*effIndex*/)
+    void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         if (Unit* target = GetHitUnit())
         {
@@ -218,7 +218,7 @@ class spell_blackheart_incite_chaos : public SpellScript
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_blackheart_incite_chaos::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnEffectHitTarget += SpellEffectFn(spell_blackheart_incite_chaos::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 const uint32 spell_blackheart_incite_chaos::INCITE_SPELLS[spell_blackheart_incite_chaos::NUM_INCITE_SPELLS] = { 33677,33680,33681,33682,33683 };

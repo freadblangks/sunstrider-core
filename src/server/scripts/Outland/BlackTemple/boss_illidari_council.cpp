@@ -560,7 +560,7 @@ class spell_illidari_council_empyreal_balance : public SpellScript
         return ValidateSpellInfo({ SPELL_BALANCE_OF_POWER });
     }
 
-    void HandleDummy(SpellEffIndex /*effIndex*/)
+    void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         Unit* target = GetHitUnit();
         target->CastSpell(target, SPELL_BALANCE_OF_POWER, true);
@@ -568,7 +568,7 @@ class spell_illidari_council_empyreal_balance : public SpellScript
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_illidari_council_empyreal_balance::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnEffectHitTarget += SpellEffectFn(spell_illidari_council_empyreal_balance::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 
@@ -577,7 +577,7 @@ class spell_illidari_council_empyreal_equivalency : public SpellScript
 {
     PrepareSpellScript(spell_illidari_council_empyreal_equivalency);
 
-    void HandleScript(SpellEffIndex /*effIndex*/)
+    void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         Unit* target = GetHitUnit();
         int32 casterHpPct = (int32)GetCaster()->GetHealthPct();
@@ -589,7 +589,7 @@ class spell_illidari_council_empyreal_equivalency : public SpellScript
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_illidari_council_empyreal_equivalency::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnEffectHitTarget += SpellEffectFn(spell_illidari_council_empyreal_equivalency::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 
@@ -701,7 +701,7 @@ class spell_illidari_council_judgement : public SpellScript
         });
     }
 
-    void HandleScript(SpellEffIndex /*effIndex*/)
+    void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         Unit* caster = GetCaster();
         Unit* target = GetHitUnit();
@@ -718,7 +718,7 @@ class spell_illidari_council_judgement : public SpellScript
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_illidari_council_judgement::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnEffectHitTarget += SpellEffectFn(spell_illidari_council_judgement::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
         AfterCast += SpellCastFn(spell_illidari_council_judgement::OnFinishCast);
     }
 };

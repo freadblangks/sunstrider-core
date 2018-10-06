@@ -51,7 +51,7 @@ class spell_razelikh_teleport_group : public SpellScriptLoader
                 return ValidateSpellInfo({ SPELL_TELEPORT_SINGLE, SPELL_TELEPORT_SINGLE_IN_GROUP });
             }
 
-            void HandleScriptEffect(SpellEffIndex /* effIndex */)
+            void HandleScriptEffect(SpellEffIndex /* effIndex */, int32& /*damage*/)
             {
                 if (Player* player = GetHitPlayer())
                 {
@@ -69,7 +69,7 @@ class spell_razelikh_teleport_group : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_razelikh_teleport_group_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+                OnEffectHitTarget += SpellEffectFn(spell_razelikh_teleport_group_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 

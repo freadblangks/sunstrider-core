@@ -258,7 +258,7 @@ class spell_egg_explosion : public SpellScriptLoader
                     buru->AI()->DoAction(ACTION_EXPLODE);
             }
 
-            void HandleDummyHitTarget(SpellEffIndex /*effIndex*/)
+            void HandleDummyHitTarget(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 if (Unit* target = GetHitUnit())
                     Unit::DealDamage(GetCaster(), target, -16 * GetCaster()->GetDistance(target) + 500);
@@ -267,7 +267,7 @@ class spell_egg_explosion : public SpellScriptLoader
             void Register() override
             {
                 AfterCast += SpellCastFn(spell_egg_explosion_SpellScript::HandleAfterCast);
-               //OnEffectHitTarget += SpellEffectFn(spell_egg_explosion_SpellScript::HandleDummyHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_egg_explosion_SpellScript::HandleDummyHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 

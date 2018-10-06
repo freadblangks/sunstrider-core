@@ -426,7 +426,7 @@ class spell_voljin_war_drums : public SpellScriptLoader
                 return ValidateSpellInfo({ SPELL_MOTIVATE_1, SPELL_MOTIVATE_2 });
             }
 
-            void HandleDummy(SpellEffIndex /*effIndex*/)
+            void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 Unit* caster = GetCaster();
                 if (Unit* target = GetHitUnit())
@@ -443,7 +443,7 @@ class spell_voljin_war_drums : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_voljin_war_drums_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_voljin_war_drums_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
@@ -479,7 +479,7 @@ class spell_voodoo : public SpellScriptLoader
                 return ValidateSpellInfo({ SPELL_BREW, SPELL_GHOSTLY, SPELL_HEX1, SPELL_HEX2, SPELL_HEX3, SPELL_GROW, SPELL_LAUNCH });
             }
 
-            void HandleDummy(SpellEffIndex /*effIndex*/)
+            void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 uint32 spellid = RAND(SPELL_BREW, SPELL_GHOSTLY, RAND(SPELL_HEX1, SPELL_HEX2, SPELL_HEX3), SPELL_GROW, SPELL_LAUNCH);
                 if (Unit* target = GetHitUnit())
@@ -488,7 +488,7 @@ class spell_voodoo : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_voodoo_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_voodoo_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 

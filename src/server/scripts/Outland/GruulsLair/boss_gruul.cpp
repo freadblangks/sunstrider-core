@@ -280,7 +280,7 @@ class spell_gruul_shatter : public SpellScriptLoader
                 return ValidateSpellInfo({ SPELL_STONED, SPELL_SHATTER_EFFECT });
             }
 
-            void HandleScript(SpellEffIndex /*effIndex*/)
+            void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 if (Unit* target = GetHitUnit())
                 {
@@ -291,7 +291,7 @@ class spell_gruul_shatter : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_gruul_shatter_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+                OnEffectHitTarget += SpellEffectFn(spell_gruul_shatter_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 

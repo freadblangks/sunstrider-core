@@ -219,16 +219,16 @@ class spell_mother_shahraz_fatal_attraction : public SpellScript
         dest.Relocate(TeleportPoint[urand(0, 6)]);
     }
 
-    void HandleTeleport(SpellEffIndex /*effIndex*/)
+    void HandleTeleport(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         GetCaster()->CastSpell(GetHitUnit(), SPELL_FATAL_ATTRACTION, true);
     }
 
     void Register() override
     {
-        //OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_mother_shahraz_fatal_attraction::FilterTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_mother_shahraz_fatal_attraction::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
         OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_mother_shahraz_fatal_attraction::SetDest, EFFECT_1, TARGET_DEST_CASTER_RANDOM);
-       //OnEffectHitTarget += SpellEffectFn(spell_mother_shahraz_fatal_attraction::HandleTeleport, EFFECT_1, SPELL_EFFECT_TELEPORT_UNITS);
+        OnEffectHitTarget += SpellEffectFn(spell_mother_shahraz_fatal_attraction::HandleTeleport, EFFECT_1, SPELL_EFFECT_TELEPORT_UNITS);
     }
 };
 
@@ -242,14 +242,14 @@ class spell_mother_shahraz_fatal_attraction_link : public SpellScript
         return ValidateSpellInfo({ SPELL_FATAL_ATTRACTION_DAMAGE });
     }
 
-    void HandleDummy(SpellEffIndex /*effIndex*/)
+    void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         GetCaster()->CastSpell(GetCaster(), SPELL_FATAL_ATTRACTION_DAMAGE, true);
     }
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_mother_shahraz_fatal_attraction_link::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnEffectHitTarget += SpellEffectFn(spell_mother_shahraz_fatal_attraction_link::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 

@@ -266,7 +266,7 @@ public:
             return ValidateSpellInfo({ SPELL_TRUE_FULFILLMENT_2, SPELL_GENERIC_DISMOUNT });
         }
 
-        void HandleEffect(SpellEffIndex /*effIndex*/)
+        void HandleEffect(SpellEffIndex /*effIndex*/, int32& /*damage*/)
         {
             GetCaster()->CastSpell(GetHitUnit(), SPELL_GENERIC_DISMOUNT, true);
             GetCaster()->CastSpell(GetHitUnit(), SPELL_TRUE_FULFILLMENT_2, true);
@@ -274,7 +274,7 @@ public:
 
         void Register() override
         {
-           //OnEffectHitTarget += SpellEffectFn(spell_skeram_true_fulfillment_SpellScript::HandleEffect, EFFECT_0, SPELL_AURA_MOD_CHARM);
+            OnEffectHitTarget += SpellEffectFn(spell_skeram_true_fulfillment_SpellScript::HandleEffect, EFFECT_0, SPELL_AURA_MOD_CHARM);
         }
     };
 

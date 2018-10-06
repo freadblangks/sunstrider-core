@@ -183,14 +183,14 @@ class spell_murmur_sonic_boom : public SpellScriptLoader
                 return ValidateSpellInfo({ SPELL_SONIC_BOOM_EFFECT });
             }
 
-            void HandleEffect(SpellEffIndex /*effIndex*/)
+            void HandleEffect(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 GetCaster()->CastSpell(nullptr, SPELL_SONIC_BOOM_EFFECT, true);
             }
 
             void Register() override
             {
-               //OnEffectHit += SpellEffectFn(spell_murmur_sonic_boom_SpellScript::HandleEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHit += SpellEffectFn(spell_murmur_sonic_boom_SpellScript::HandleEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 

@@ -624,14 +624,14 @@ class spell_ahune_synch_health : public SpellScript
 {
     PrepareSpellScript(spell_ahune_synch_health);
 
-    void HandleScript(SpellEffIndex /*effIndex*/)
+    void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         GetHitUnit()->SetHealth(GetCaster()->GetHealth());
     }
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_ahune_synch_health::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnEffectHitTarget += SpellEffectFn(spell_ahune_synch_health::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 
@@ -761,7 +761,7 @@ class spell_ice_spear_target_picker : public SpellScript
         targets.push_back(target);
     }
 
-    void HandleDummy(SpellEffIndex /*effIndex*/)
+    void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         GetCaster()->CastSpell(GetHitUnit(), SPELL_SUMMON_ICE_SPEAR_BUNNY, true);
     }
@@ -769,7 +769,7 @@ class spell_ice_spear_target_picker : public SpellScript
     void Register() override
     {
         OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_ice_spear_target_picker::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-       //OnEffectHitTarget += SpellEffectFn(spell_ice_spear_target_picker::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnEffectHitTarget += SpellEffectFn(spell_ice_spear_target_picker::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 
@@ -783,7 +783,7 @@ class spell_slippery_floor_periodic : public SpellScript
         return ValidateSpellInfo({ SPELL_SLIPPERY_FLOOR_SLIP });
     }
 
-    void HandleScriptEffect(SpellEffIndex /*effIndex*/)
+    void HandleScriptEffect(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         if (Unit* target = GetHitUnit())
             if (target->isMoving())
@@ -795,7 +795,7 @@ class spell_slippery_floor_periodic : public SpellScript
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_slippery_floor_periodic::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnEffectHitTarget += SpellEffectFn(spell_slippery_floor_periodic::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 
@@ -826,7 +826,7 @@ class spell_ahune_minion_despawner : public SpellScript
 {
     PrepareSpellScript(spell_ahune_minion_despawner);
 
-    void HandleScript(SpellEffIndex /*effIndex*/)
+    void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         if (GetHitCreature())
             GetHitCreature()->DespawnOrUnsummon();
@@ -834,7 +834,7 @@ class spell_ahune_minion_despawner : public SpellScript
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_ahune_minion_despawner::HandleScript, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+        OnEffectHitTarget += SpellEffectFn(spell_ahune_minion_despawner::HandleScript, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
     }
 };
 
@@ -848,14 +848,14 @@ class spell_ice_bombardment_dest_picker : public SpellScript
         return ValidateSpellInfo({ SPELL_ICE_BOMBARDMENT });
     }
 
-    void HandleScriptEffect(SpellEffIndex /*effIndex*/)
+    void HandleScriptEffect(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         GetCaster()->CastSpell(GetHitDest()->GetPosition(), SPELL_ICE_BOMBARDMENT, true);
     }
 
     void Register() override
     {
-       //OnEffectHit += SpellEffectFn(spell_ice_bombardment_dest_picker::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnEffectHit += SpellEffectFn(spell_ice_bombardment_dest_picker::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 

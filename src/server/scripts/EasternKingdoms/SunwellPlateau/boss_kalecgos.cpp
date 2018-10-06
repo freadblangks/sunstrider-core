@@ -607,14 +607,14 @@ class spell_kalecgos_tap_check : public SpellScript
         return ValidateSpellInfo({ uint32(spellInfo->Effects[EFFECT_0].CalcValue()) });
     }
 
-    void HandleDummy(SpellEffIndex /*effIndex*/)
+    void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         GetHitUnit()->CastSpell(GetCaster(), (uint32)GetSpellInfo()->Effects[EFFECT_0].CalcValue(), true);
     }
 
     void Register() override
     {
-        //OnEffectHitTarget += SpellEffectFn(spell_kalecgos_tap_check::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnEffectHitTarget += SpellEffectFn(spell_kalecgos_tap_check::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 
@@ -653,7 +653,7 @@ class spell_kalecgos_spectral_blast : public SpellScript
         targets.remove_if(SpectralBlastSelector(GetCaster()));
     }
 
-    void HandleDummy(SpellEffIndex /*effIndex*/)
+    void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         Unit* caster = GetCaster();
         Unit* target = GetHitUnit();
@@ -666,7 +666,7 @@ class spell_kalecgos_spectral_blast : public SpellScript
     void Register() override
     {
         OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kalecgos_spectral_blast::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-        //OnEffectHitTarget += SpellEffectFn(spell_kalecgos_spectral_blast::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnEffectHitTarget += SpellEffectFn(spell_kalecgos_spectral_blast::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 
@@ -686,7 +686,7 @@ class spell_kalecgos_spectral_realm_trigger : public SpellScript
         });
     }
 
-    void HandleDummy(SpellEffIndex /*effIndex*/)
+    void HandleDummy(SpellEffIndex /*effIndex*/, int32& /*damage*/)
     {
         Unit* target = GetHitUnit();
         target->CastSpell(target, SPELL_SPECTRAL_REALM_TELEPORT, true);
@@ -697,7 +697,7 @@ class spell_kalecgos_spectral_realm_trigger : public SpellScript
 
     void Register() override
     {
-        //OnEffectHitTarget += SpellEffectFn(spell_kalecgos_spectral_realm_trigger::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnEffectHitTarget += SpellEffectFn(spell_kalecgos_spectral_realm_trigger::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 

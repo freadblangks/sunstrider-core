@@ -221,7 +221,7 @@ class spell_remove_kargath_executioner : public SpellScriptLoader
         {
             PrepareSpellScript(spell_remove_kargath_executioner_SpellScript);
 
-            void HandleScript(SpellEffIndex /*effIndex*/)
+            void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 Unit* target = GetCaster();
 
@@ -237,7 +237,7 @@ class spell_remove_kargath_executioner : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_remove_kargath_executioner_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+                OnEffectHitTarget += SpellEffectFn(spell_remove_kargath_executioner_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 

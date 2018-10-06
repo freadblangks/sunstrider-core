@@ -157,7 +157,7 @@ class spell_kormok_summon_bone_mages : SpellScriptLoader
                 return ValidateSpellInfo(SummonMageSpells);
             }
 
-            void HandleScript(SpellEffIndex effIndex)
+            void HandleScript(SpellEffIndex effIndex, int32& /*damage*/)
             {
                 PreventHitDefaultEffect(effIndex);
                 for (uint32 i = 0; i < 2; ++i)
@@ -166,7 +166,7 @@ class spell_kormok_summon_bone_mages : SpellScriptLoader
 
             void Register() override
             {
-                //OnEffectHitTarget += SpellEffectFn(spell_kormok_summon_bone_magesSpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+                OnEffectHitTarget += SpellEffectFn(spell_kormok_summon_bone_magesSpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
@@ -191,7 +191,7 @@ class spell_kormok_summon_bone_minions : SpellScriptLoader
             return ValidateSpellInfo({ SPELL_SUMMON_BONE_MINIONS });
         }
 
-        void HandleScript(SpellEffIndex effIndex)
+        void HandleScript(SpellEffIndex effIndex, int32& /*damage*/)
         {
             PreventHitDefaultEffect(effIndex);
 
@@ -202,7 +202,7 @@ class spell_kormok_summon_bone_minions : SpellScriptLoader
 
         void Register() override
         {
-            //OnEffectHitTarget += SpellEffectFn(spell_kormok_summon_bone_minionsSpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+            OnEffectHitTarget += SpellEffectFn(spell_kormok_summon_bone_minionsSpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
         }
     };
 

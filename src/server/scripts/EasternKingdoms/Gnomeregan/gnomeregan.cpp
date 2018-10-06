@@ -554,7 +554,7 @@ class spell_collecting_fallout : public SpellScriptLoader
         {
             PrepareSpellScript(spell_collecting_fallout_SpellScript);
 
-            void OnLaunch(SpellEffIndex effIndex)
+            void OnLaunch(SpellEffIndex effIndex, int32& /*damage*/)
             {
                 // estimated 25% chance of success
                 if (roll_chance_i(25))
@@ -563,7 +563,7 @@ class spell_collecting_fallout : public SpellScriptLoader
                     PreventHitDefaultEffect(effIndex);
             }
 
-            void HandleFail(SpellEffIndex effIndex)
+            void HandleFail(SpellEffIndex effIndex, int32& /*damage*/)
             {
                 if (!_spellFail)
                     PreventHitDefaultEffect(effIndex);
@@ -571,8 +571,8 @@ class spell_collecting_fallout : public SpellScriptLoader
 
             void Register() override
             {
-                //OnEffectLaunch += SpellEffectFn(spell_collecting_fallout_SpellScript::OnLaunch, EFFECT_0, SPELL_EFFECT_TRIGGER_SPELL);
-                //OnEffectLaunch += SpellEffectFn(spell_collecting_fallout_SpellScript::HandleFail, EFFECT_1, SPELL_EFFECT_TRIGGER_SPELL);
+                 OnEffectLaunch += SpellEffectFn(spell_collecting_fallout_SpellScript::OnLaunch, EFFECT_0, SPELL_EFFECT_TRIGGER_SPELL);
+                 OnEffectLaunch += SpellEffectFn(spell_collecting_fallout_SpellScript::HandleFail, EFFECT_1, SPELL_EFFECT_TRIGGER_SPELL);
             }
 
             bool _spellFail = true;

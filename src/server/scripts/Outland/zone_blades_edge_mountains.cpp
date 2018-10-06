@@ -1035,7 +1035,7 @@ class spell_oscillating_field : public SpellScriptLoader
         {
             PrepareSpellScript(spell_oscillating_field_SpellScript);
 
-            void HandleEffect(SpellEffIndex /*effIndex*/)
+            void HandleEffect(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 if (Player* player = GetHitPlayer())
                     if (player->GetAuraCount(SPELL_OSCILLATION_FIELD) == 5 && player->GetQuestStatus(QUEST_GAUGING_THE_RESONANT_FREQUENCY) == QUEST_STATUS_INCOMPLETE)
@@ -1044,7 +1044,7 @@ class spell_oscillating_field : public SpellScriptLoader
 
             void Register() override
             {
-                //OnEffectHitTarget += SpellEffectFn(spell_oscillating_field_SpellScript::HandleEffect, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+                OnEffectHitTarget += SpellEffectFn(spell_oscillating_field_SpellScript::HandleEffect, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
             }
         };
 

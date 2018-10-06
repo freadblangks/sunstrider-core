@@ -121,7 +121,7 @@ class spell_ooze_zap : public SpellScriptLoader
                 return SPELL_CAST_OK;
             }
 
-            void HandleDummy(SpellEffIndex effIndex)
+            void HandleDummy(SpellEffIndex effIndex, int32& /*damage*/)
             {
                 PreventHitDefaultEffect(effIndex);
                 if (GetHitUnit())
@@ -130,7 +130,7 @@ class spell_ooze_zap : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_ooze_zap_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_ooze_zap_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
                 OnCheckCast += SpellCheckCastFn(spell_ooze_zap_SpellScript::CheckRequirement);
             }
         };
@@ -155,7 +155,7 @@ class spell_ooze_zap_channel_end : public SpellScriptLoader
                 return ValidateSpellInfo({ SPELL_OOZE_ZAP_CHANNEL_END });
             }
 
-            void HandleDummy(SpellEffIndex effIndex)
+            void HandleDummy(SpellEffIndex effIndex, int32& /*damage*/)
             {
                 PreventHitDefaultEffect(effIndex);
                 if (Player* player = GetCaster()->ToPlayer())
@@ -165,7 +165,7 @@ class spell_ooze_zap_channel_end : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_ooze_zap_channel_end_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_ooze_zap_channel_end_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
@@ -201,7 +201,7 @@ class spell_energize_aoe : public SpellScriptLoader
                 targets.push_back(GetCaster());
             }
 
-            void HandleScript(SpellEffIndex effIndex)
+            void HandleScript(SpellEffIndex effIndex, int32& /*damage*/)
             {
                 PreventHitDefaultEffect(effIndex);
                 GetCaster()->CastSpell(GetCaster(), uint32(GetEffectValue()), true);
@@ -209,7 +209,7 @@ class spell_energize_aoe : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_energize_aoe_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+                OnEffectHitTarget += SpellEffectFn(spell_energize_aoe_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_energize_aoe_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_energize_aoe_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
             }

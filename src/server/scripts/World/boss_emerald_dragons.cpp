@@ -783,7 +783,7 @@ class spell_mark_of_nature : public SpellScriptLoader
                 targets.remove_if(MarkOfNatureTargetSelector());
             }
 
-            void HandleEffect(SpellEffIndex effIndex)
+            void HandleEffect(SpellEffIndex effIndex, int32& /*damage*/)
             {
                 PreventHitDefaultEffect(effIndex);
                 GetHitUnit()->CastSpell(GetHitUnit(), SPELL_AURA_OF_NATURE, true);
@@ -792,7 +792,7 @@ class spell_mark_of_nature : public SpellScriptLoader
             void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_mark_of_nature_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-               //OnEffectHitTarget += SpellEffectFn(spell_mark_of_nature_SpellScript::HandleEffect, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+                OnEffectHitTarget += SpellEffectFn(spell_mark_of_nature_SpellScript::HandleEffect, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
             }
         };
 

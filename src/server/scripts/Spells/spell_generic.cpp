@@ -401,7 +401,7 @@ class spell_gen_elune_candle : public SpellScript
 
     void Register() override
     {
-       //OnEffectHitTarget += SpellEffectFn(spell_gen_elune_candle::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
+       OnEffectHitTarget += SpellEffectFn(spell_gen_elune_candle::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 

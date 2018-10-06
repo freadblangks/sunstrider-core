@@ -170,7 +170,7 @@ class spell_commander_sarannis_summon_reinforcements : public SpellScriptLoader
         {
             PrepareSpellScript(spell_commander_sarannis_summon_reinforcements_SpellScript);
 
-            void HandleCast(SpellEffIndex /*effIndex*/)
+            void HandleCast(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 GetCaster()->SummonCreature(NPC_SUMMONED_BLOODWARDER_MENDER, PosSummonReinforcements[0], TEMPSUMMON_CORPSE_DESPAWN);
                 GetCaster()->SummonCreature(NPC_SUMMONED_BLOODWARDER_RESERVIST, PosSummonReinforcements[1], TEMPSUMMON_CORPSE_DESPAWN);
@@ -181,7 +181,7 @@ class spell_commander_sarannis_summon_reinforcements : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_commander_sarannis_summon_reinforcements_SpellScript::HandleCast, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_commander_sarannis_summon_reinforcements_SpellScript::HandleCast, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 

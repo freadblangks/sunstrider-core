@@ -586,7 +586,7 @@ class spell_summon_blood_elves_script : SpellScriptLoader
                 return ValidateSpellInfo(SummonBloodElvesSpells);
             }
 
-            void HandleScript(SpellEffIndex /*effIndex*/)
+            void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 for (uint8 i = 0; i < MAX_SUMMON_BLOOD_ELVES; ++i)
                     GetCaster()->CastSpell(nullptr, SummonBloodElvesSpells[urand(0,3)], true);
@@ -594,7 +594,7 @@ class spell_summon_blood_elves_script : SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_summon_blood_elves_script_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+                OnEffectHitTarget += SpellEffectFn(spell_summon_blood_elves_script_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 

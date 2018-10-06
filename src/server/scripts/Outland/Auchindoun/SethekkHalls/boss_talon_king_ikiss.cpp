@@ -186,7 +186,7 @@ class spell_talon_king_ikiss_blink : public SpellScriptLoader
                 targets.push_back(target);
             }
 
-            void HandleDummyHitTarget(SpellEffIndex effIndex)
+            void HandleDummyHitTarget(SpellEffIndex effIndex, int32& /*damage*/)
             {
                 PreventHitDefaultEffect(effIndex);
                 GetHitUnit()->CastSpell(GetCaster(), SPELL_BLINK_TELEPORT, true);
@@ -195,7 +195,7 @@ class spell_talon_king_ikiss_blink : public SpellScriptLoader
             void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_talon_king_ikiss_blink_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-               //OnEffectHitTarget += SpellEffectFn(spell_talon_king_ikiss_blink_SpellScript::HandleDummyHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_talon_king_ikiss_blink_SpellScript::HandleDummyHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 

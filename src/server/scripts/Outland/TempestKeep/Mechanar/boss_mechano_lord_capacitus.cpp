@@ -202,7 +202,7 @@ class spell_capacitus_polarity_charge : public SpellScriptLoader
                 }
             }
 
-            void HandleDamage(SpellEffIndex /*effIndex*/)
+            void HandleDamage(SpellEffIndex /*effIndex*/, int32& /*damage*/)
             {
                 if (!GetTriggeringSpell())
                     return;
@@ -215,7 +215,7 @@ class spell_capacitus_polarity_charge : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_capacitus_polarity_charge_SpellScript::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+                OnEffectHitTarget += SpellEffectFn(spell_capacitus_polarity_charge_SpellScript::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_capacitus_polarity_charge_SpellScript::HandleTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ALLY);
             }
         };
@@ -240,7 +240,7 @@ class spell_capacitus_polarity_shift : public SpellScriptLoader
                 return ValidateSpellInfo({ SPELL_POSITIVE_POLARITY, SPELL_NEGATIVE_POLARITY });
             }
 
-            void HandleDummy(SpellEffIndex /* effIndex */)
+            void HandleDummy(SpellEffIndex /* effIndex */, int32& /*damage*/)
             {
                 Unit* target = GetHitUnit();
                 Unit* caster = GetCaster();
@@ -250,7 +250,7 @@ class spell_capacitus_polarity_shift : public SpellScriptLoader
 
             void Register() override
             {
-               //OnEffectHitTarget += SpellEffectFn(spell_capacitus_polarity_shift_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_capacitus_polarity_shift_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
