@@ -179,6 +179,19 @@
 
 extern uint32 GetSkillLevel(Player *player,uint32 skill);
 
+class Creature;
+uint32 TC_GAME_API GetGossipActionFor(Player* player, uint32 gossipListId);
+void TC_GAME_API ClearGossipMenuFor(Player* player);
+// Using provided text, not from DB
+void TC_GAME_API AddGossipItemFor(Player* player, uint32 icon, std::string const& text, uint32 sender, uint32 action);
+// Using provided texts, not from DB
+void TC_GAME_API AddGossipItemFor(Player* player, uint32 icon, std::string const& text, uint32 sender, uint32 action, std::string const& popupText, uint32 popupMoney, bool coded);
+// Uses gossip item info from DB
+void TC_GAME_API AddGossipItemFor(Player* player, uint32 gossipMenuID, uint32 gossipMenuItemID, uint32 sender, uint32 action);
+void TC_GAME_API SendGossipMenuFor(Player* player, uint32 npcTextID, ObjectGuid const& guid);
+void TC_GAME_API SendGossipMenuFor(Player* player, uint32 npcTextID, Creature const* creature);
+void TC_GAME_API CloseGossipMenuFor(Player* player);
+
 // Defined fuctions to use with player.
 
 /*
