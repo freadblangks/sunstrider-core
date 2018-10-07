@@ -1936,18 +1936,18 @@ class spell_illidan_parasitic_shadowfiend : public AuraScript
         AfterEffectRemove += AuraEffectRemoveFn(spell_illidan_parasitic_shadowfiend::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
     }
 };
-
+/*
 // 41923 - Remove Parasitic Shadowfiends (SERVERSIDE)
 class spell_illidan_remove_parasitic_shadowfiend : public AuraScript
 {
     PrepareAuraScript(spell_illidan_remove_parasitic_shadowfiend);
 
-    bool Validate(SpellInfo const* /*spellInfo*/) override
+    bool Validate(SpellInfo const* spellInfo) override
     {
         return ValidateSpellInfo({ SPELL_PARASITIC_SHADOWFIEND, SPELL_PARASITIC_SHADOWFIEND_2 });
     }
 
-    void HandleApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    void HandleApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
     {
         GetTarget()->RemoveAurasDueToSpell(SPELL_PARASITIC_SHADOWFIEND);
         GetTarget()->RemoveAurasDueToSpell(SPELL_PARASITIC_SHADOWFIEND_2);
@@ -1957,7 +1957,7 @@ class spell_illidan_remove_parasitic_shadowfiend : public AuraScript
     {
         AfterEffectApply += AuraEffectApplyFn(spell_illidan_remove_parasitic_shadowfiend::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
-};
+}; */
 
 /* 39635 - Throw Glaive
    39849 - Throw Glaive */
@@ -2349,7 +2349,7 @@ void AddSC_boss_illidan()
     RegisterAuraScript(spell_illidan_akama_door_channel);
     RegisterSpellScript(spell_illidan_draw_soul);
     RegisterAuraScript(spell_illidan_parasitic_shadowfiend);
-    RegisterAuraScript(spell_illidan_remove_parasitic_shadowfiend);
+    //RegisterAuraScript(spell_illidan_remove_parasitic_shadowfiend);
     RegisterSpellScript(spell_illidan_throw_warglaive);
     RegisterAuraScript(spell_illidan_tear_of_azzinoth_channel);
     RegisterSpellScript(spell_illidan_flame_blast);

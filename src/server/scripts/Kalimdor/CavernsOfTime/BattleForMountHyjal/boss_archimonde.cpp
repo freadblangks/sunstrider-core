@@ -539,7 +539,7 @@ public:
         return GetHyjalAI<boss_archimondeAI>(creature);
     }
 };
-
+/*
 // 39142 - Drain World Tree Dummy
 class spell_archimonde_drain_world_tree_dummy : public SpellScriptLoader
 {
@@ -550,12 +550,12 @@ class spell_archimonde_drain_world_tree_dummy : public SpellScriptLoader
         {
             PrepareSpellScript(spell_archimonde_drain_world_tree_dummy_SpellScript);
 
-            bool Validate(SpellInfo const* /*spellInfo*/) override
+            bool Validate(SpellInfo const* spellInfo) override
             {
                 return ValidateSpellInfo({ SPELL_DRAIN_WORLD_TREE_TRIGGERED });
             }
 
-            void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
+            void HandleScript(SpellEffIndex effIndex, int32& damage)
             {
                 if (Unit* target = GetHitUnit())
                     target->CastSpell(GetCaster(), SPELL_DRAIN_WORLD_TREE_TRIGGERED, true);
@@ -572,12 +572,12 @@ class spell_archimonde_drain_world_tree_dummy : public SpellScriptLoader
             return new spell_archimonde_drain_world_tree_dummy_SpellScript();
         }
 };
-
+*/
 void AddSC_boss_archimonde()
 {
     new boss_archimonde();
     new npc_doomfire();
     new npc_doomfire_targetting();
     new npc_ancient_wisp();
-    new spell_archimonde_drain_world_tree_dummy();
+    //new spell_archimonde_drain_world_tree_dummy();
 }

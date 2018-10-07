@@ -26,9 +26,7 @@ EndScriptData */
 /* ContentData
 at_coilfang_waterfall           4591
 at_legion_teleporter            4560 Teleporter TO Invasion Point: Cataclysm
-at_stormwright_shelf            q12741
 at_last_rites                   q12019
-at_sholazar_waygate             q12548
 at_nats_landing                 q11209
 at_bring_your_orphan_to         q910 q910 q1800 q1479 q1687 q1558 q10951 q10952
 at_brewfest
@@ -110,31 +108,6 @@ class AreaTrigger_at_legion_teleporter : public AreaTriggerScript
 };
 
 /*######
-## at_stormwright_shelf
-######*/
-
-enum StormwrightShelf
-{
-    QUEST_STRENGTH_OF_THE_TEMPEST               = 12741,
-
-    SPELL_CREATE_TRUE_POWER_OF_THE_TEMPEST      = 53067
-};
-
-class AreaTrigger_at_stormwright_shelf : public AreaTriggerScript
-{
-    public:
-        AreaTrigger_at_stormwright_shelf() : AreaTriggerScript("at_stormwright_shelf") { }
-
-        bool OnTrigger(Player* player, AreaTriggerEntry const* /*trigger*/) override
-        {
-            if (!player->IsDead() && player->GetQuestStatus(QUEST_STRENGTH_OF_THE_TEMPEST) == QUEST_STATUS_INCOMPLETE)
-                player->CastSpell(player, SPELL_CREATE_TRUE_POWER_OF_THE_TEMPEST, false);
-
-            return true;
-        }
-};
-
-/*######
 ## at_scent_larkorwi
 ######*/
 
@@ -155,49 +128,6 @@ class AreaTrigger_at_scent_larkorwi : public AreaTriggerScript
             {
                 if (!player->FindNearestCreature(NPC_LARKORWI_MATE, 15))
                     player->SummonCreature(NPC_LARKORWI_MATE, player->GetPositionX()+5, player->GetPositionY(), player->GetPositionZ(), 3.3f, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 100000);
-            }
-
-            return false;
-        }
-};
-
-/*######
-## at_sholazar_waygate
-######*/
-
-enum Waygate
-{
-    SPELL_SHOLAZAR_TO_UNGORO_TELEPORT           = 52056,
-    SPELL_UNGORO_TO_SHOLAZAR_TELEPORT           = 52057,
-
-    AT_SHOLAZAR                                 = 5046,
-    AT_UNGORO                                   = 5047,
-
-    QUEST_THE_MAKERS_OVERLOOK                   = 12613,
-    QUEST_THE_MAKERS_PERCH                      = 12559,
-    QUEST_MEETING_A_GREAT_ONE                   = 13956,
-};
-
-class AreaTrigger_at_sholazar_waygate : public AreaTriggerScript
-{
-    public:
-        AreaTrigger_at_sholazar_waygate() : AreaTriggerScript("at_sholazar_waygate") { }
-
-        bool OnTrigger(Player* player, AreaTriggerEntry const* trigger) override
-        {
-            if (!player->IsDead() && (player->GetQuestStatus(QUEST_MEETING_A_GREAT_ONE) != QUEST_STATUS_NONE ||
-                (player->GetQuestStatus(QUEST_THE_MAKERS_OVERLOOK) == QUEST_STATUS_REWARDED && player->GetQuestStatus(QUEST_THE_MAKERS_PERCH) == QUEST_STATUS_REWARDED)))
-            {
-                switch (trigger->id)
-                {
-                    case AT_SHOLAZAR:
-                        player->CastSpell(player, SPELL_SHOLAZAR_TO_UNGORO_TELEPORT, true);
-                        break;
-
-                    case AT_UNGORO:
-                        player->CastSpell(player, SPELL_UNGORO_TO_SHOLAZAR_TELEPORT, true);
-                        break;
-                }
             }
 
             return false;
@@ -395,81 +325,13 @@ class AreaTrigger_at_area_52_entrance : public AreaTriggerScript
         std::map<uint32, time_t> _triggerTimes;
 };
 
-/*######
- ## at_frostgrips_hollow
- ######*/
-
-enum FrostgripsHollow
-{
-    QUEST_THE_LONESOME_WATCHER      = 12877,
-
-    NPC_STORMFORGED_MONITOR         = 29862,
-    NPC_STORMFORGED_ERADICTOR       = 29861,
-
-    TYPE_WAYPOINT                   = 0,
-    DATA_START                      = 0
-};
-
-Position const stormforgedMonitorPosition = {6963.95f, 45.65f, 818.71f, 4.948f};
-Position const stormforgedEradictorPosition = {6983.18f, 7.15f, 806.33f, 2.228f};
-
-class AreaTrigger_at_frostgrips_hollow : public AreaTriggerScript
-{
-public:
-    AreaTrigger_at_frostgrips_hollow() : AreaTriggerScript("at_frostgrips_hollow")
-    {
-        stormforgedMonitorGUID.Clear();
-        stormforgedEradictorGUID.Clear();
-    }
-
-    bool OnTrigger(Player* player, AreaTriggerEntry const* /* trigger */) override
-    {
-        if (player->GetQuestStatus(QUEST_THE_LONESOME_WATCHER) != QUEST_STATUS_INCOMPLETE)
-            return false;
-
-        Creature* stormforgedMonitor = ObjectAccessor::GetCreature(*player, stormforgedMonitorGUID);
-        if (stormforgedMonitor)
-            return false;
-
-        Creature* stormforgedEradictor = ObjectAccessor::GetCreature(*player, stormforgedEradictorGUID);
-        if (stormforgedEradictor)
-            return false;
-
-        stormforgedMonitor = player->SummonCreature(NPC_STORMFORGED_MONITOR, stormforgedMonitorPosition, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 60000);
-        if (stormforgedMonitor)
-        {
-            stormforgedMonitorGUID = stormforgedMonitor->GetGUID();
-            stormforgedMonitor->SetWalk(false);
-            /// The npc would search an alternative way to get to the last waypoint without this unit state.
-            stormforgedMonitor->AddUnitState(UNIT_STATE_IGNORE_PATHFINDING);
-            stormforgedMonitor->GetMotionMaster()->MovePath(NPC_STORMFORGED_MONITOR * 100, false);
-        }
-
-        stormforgedEradictor = player->SummonCreature(NPC_STORMFORGED_ERADICTOR, stormforgedEradictorPosition, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 60000);
-        if (stormforgedEradictor)
-        {
-            stormforgedEradictorGUID = stormforgedEradictor->GetGUID();
-            stormforgedEradictor->GetMotionMaster()->MovePath(NPC_STORMFORGED_ERADICTOR * 100, false);
-        }
-
-        return true;
-    }
-
-private:
-    ObjectGuid stormforgedMonitorGUID;
-    ObjectGuid stormforgedEradictorGUID;
-};
-
 void AddSC_areatrigger_scripts()
 {
     new AreaTrigger_at_coilfang_waterfall();
     new AreaTrigger_at_legion_teleporter();
-    new AreaTrigger_at_stormwright_shelf();
     new AreaTrigger_at_scent_larkorwi();
-    new AreaTrigger_at_sholazar_waygate();
     new AreaTrigger_at_nats_landing();
     new AreaTrigger_at_sentry_point();
     new AreaTrigger_at_brewfest();
     new AreaTrigger_at_area_52_entrance();
-    new AreaTrigger_at_frostgrips_hollow();
 }

@@ -298,12 +298,12 @@ public:
     };
 
 };
-
+/*
 class spell_ysida_saved_credit : public SpellScript
 {
     PrepareSpellScript(spell_ysida_saved_credit);
 
-    bool Validate(SpellInfo const* /*spell*/) override
+    bool Validate(SpellInfo const* spell) override
     {
         return ValidateSpellInfo({ SPELL_YSIDA_SAVED });
     }
@@ -316,7 +316,7 @@ class spell_ysida_saved_credit : public SpellScript
         });
     }
 
-    void HandleScript(SpellEffIndex /*effIndex*/, int32& /*damage*/)
+    void HandleScript(SpellEffIndex effIndex, int32& damage)
     {
         if (Player* player = GetHitUnit()->ToPlayer())
         {
@@ -331,11 +331,11 @@ class spell_ysida_saved_credit : public SpellScript
         OnEffectHitTarget += SpellEffectFn(spell_ysida_saved_credit::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
-
+*/
 void AddSC_stratholme()
 {
     new go_gauntlet_gate();
     new npc_restless_soul();
     new npc_spectral_ghostly_citizen();
-    RegisterSpellScript(spell_ysida_saved_credit);
+    //RegisterSpellScript(spell_ysida_saved_credit);
 }

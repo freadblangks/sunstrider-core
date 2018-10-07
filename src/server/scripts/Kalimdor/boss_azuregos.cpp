@@ -174,7 +174,7 @@ class MarkOfFrostTargetSelector
             return true;
         }
 };
-
+/*
 class spell_mark_of_frost : public SpellScriptLoader
 {
     public:
@@ -184,7 +184,7 @@ class spell_mark_of_frost : public SpellScriptLoader
         {
             PrepareSpellScript(spell_mark_of_frost_SpellScript);
 
-            bool Validate(SpellInfo const* /*spellInfo*/) override
+            bool Validate(SpellInfo const* spellInfo) override
             {
                 return ValidateSpellInfo({ SPELL_MARK_OF_FROST, SPELL_AURA_OF_FROST });
             }
@@ -194,7 +194,7 @@ class spell_mark_of_frost : public SpellScriptLoader
                 targets.remove_if(MarkOfFrostTargetSelector());
             }
 
-            void HandleEffect(SpellEffIndex effIndex, int32& /*damage*/)
+            void HandleEffect(SpellEffIndex effIndex, int32& damage)
             {
                 PreventHitDefaultEffect(effIndex);
                 GetHitUnit()->CastSpell(GetHitUnit(), SPELL_AURA_OF_FROST, true);
@@ -212,9 +212,9 @@ class spell_mark_of_frost : public SpellScriptLoader
             return new spell_mark_of_frost_SpellScript();
         }
 };
-
+*/
 void AddSC_boss_azuregos()
 {
     new boss_azuregos();
-    new spell_mark_of_frost();
+    //new spell_mark_of_frost();
 }
