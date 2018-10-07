@@ -95,14 +95,28 @@ void ChaseMovementGenerator::DoSpreadIfNeeded(Unit* owner, Unit* target)
     float const hitboxSum = owner->GetCombatReach() + target->GetCombatReach();
     float maxRange = _range ? _range->MaxRange + hitboxSum : owner->GetMeleeRange(target); // melee range already includes hitboxes
     maxRange -= owner->GetCombatReach(); // Combat reach gets added again in GetNearPoint
-    static float const minSpreadRange = 0.8f;
+
+    float minSpreadRange;
+    float maxSpreadRange;
+
+    if (target->GetAttackers().size() > 10)
+    {
+        minSpreadRange = 0.8f;
+        maxSpreadRange = 4.0f;
+    }
+    else
+    {
+        minSpreadRange = 1.5f;
+        maxSpreadRange = 2.0f;
+    }
+
     if (maxRange < minSpreadRange)
     {
         _canSpread = false;
         return;
     }
 
-    float const nearRange = frand(minSpreadRange, std::min(target->GetAttackers().size() > 5 ? 4.0f : 2.0f, maxRange));
+    float nearRange = frand(minSpreadRange, std::min(maxSpreadRange, maxRange));
 
     float x, y, z;
     target->GetNearPoint(owner, x, y, z, nearRange, newAngle);

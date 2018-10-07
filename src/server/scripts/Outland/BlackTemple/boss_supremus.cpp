@@ -73,6 +73,7 @@ struct boss_supremus : public BossAI
         events.SetPhase(PHASE_INITIAL);
         me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, false);
         me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, false);
+        me->RemoveAllAuras();
     }
 
     void EnterEvadeMode(EvadeReason /*why*/) override
@@ -87,6 +88,7 @@ struct boss_supremus : public BossAI
         ChangePhase();
         events.ScheduleEvent(EVENT_BERSERK, 15min);
         events.ScheduleEvent(EVENT_FLAME, 20s);
+        me->RemoveAllAuras();
     }
 
     void ChangePhase()

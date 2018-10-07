@@ -4198,6 +4198,11 @@ bool Unit::Attack(Unit *victim, bool meleeAttack)
     if (GetTypeId() == TYPEID_UNIT && GetStandState() == UNIT_STAND_STATE_DEAD)
         SetStandState(UNIT_STAND_STATE_STAND);
 
+    if (m_attacking != victim)
+    {
+        SendMeleeAttackStart(victim);
+    }
+
     //already attacking
     if (m_attacking) {
         if (m_attacking == victim) {
