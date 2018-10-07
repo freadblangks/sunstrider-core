@@ -21,6 +21,7 @@ PathGenerator::PathGenerator(const Unit* owner) :
     _sourcePos.Relocate(owner);
     
     UpdateOptions();
+    CreateFilter(); //update filter after setting options
     //TC_LOG_DEBUG("maps", "++ PathGenerator::PathGenerator for %u \n", _sourceUnit->GetGUID().GetCounter());
 }
 
@@ -635,7 +636,8 @@ void PathGenerator::NormalizePath()
     for (uint32 i = 0; i < _pathPoints.size(); ++i)
     {
         float searchDist = (_forceDestination && i == (_pathPoints.size() - 1)) ? 5.0f : 20.0f; //sunstrider: do not normalize last point as much if destination is forced
-        WorldObject::UpdateAllowedPositionZ(_sourceUnit ? _sourceUnit->GetPhaseMask() : PHASEMASK_NORMAL, _sourceMapId, _pathPoints[i].x, _pathPoints[i].y, _pathPoints[i].z, SourceCanSwim(), SourceCanFly() || SourceIgnorePathfinding(), SourceCanWaterwalk(), searchDist);
+        float collisionHeight = _sourceUnit ? _sourceUnit->GetCollisionHeight() : DEFAULT_COLLISION_HEIGHT;
+        WorldObject::UpdateAllowedPositionZ(_sourceUnit ? _sourceUnit->GetPhaseMask() : PHASEMASK_NORMAL, _sourceMapId, _pathPoints[i].x, _pathPoints[i].y, _pathPoints[i].z, SourceCanSwim(), SourceCanFly() || SourceIgnorePathfinding(), SourceCanWaterwalk(), collisionHeight, searchDist);
     }
 }
 
@@ -666,8 +668,6 @@ void PathGenerator::CreateFilter()
         includeFlags |= (NAV_WATER | NAV_MAGMA | NAV_SLIME);
     if(SourceCanWalk())
         includeFlags |= NAV_GROUND;
-
-    DEBUG_ASSERT(includeFlags != 0);
 
     _filter.setIncludeFlags(includeFlags);
     _filter.setExcludeFlags(excludeFlags);
