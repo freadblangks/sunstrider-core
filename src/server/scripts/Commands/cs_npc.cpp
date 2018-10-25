@@ -306,8 +306,6 @@ public:
                 {
                     sObjectMgr->AddCreatureToGrid(guid, &data);
                     creature->SaveToDB(trans->GetGOInfo()->moTransport.mapID, 1 << map->GetSpawnMode());
-                    // Fill creature_entry. Shouldn't have any entry of this type but replace just to be sure in case database is not sane
-                    WorldDatabase.PExecute("REPLACE INTO creature_entry (`spawnID`,`entry`) VALUES (%u,%u)", creature->GetSpawnId(), id);
                 }
                 else {
                     handler->SendSysMessage("Error: cannot create NPC Passenger.");
@@ -333,8 +331,6 @@ public:
         creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()));
 
         uint32 spawnId = creature->GetSpawnId(); //spawn id gets generated in SaveToDB
-        // Fill creature_entry. Shouldn't have any entry of this type but replace just to be sure in case database is not sane
-        WorldDatabase.PExecute("REPLACE INTO creature_entry (`spawnID`,`entry`) VALUES (%u,%u)", spawnId, id);
 
         CreatureData& data = sObjectMgr->NewOrExistCreatureData(spawnId);
         data.ids.emplace_back(id);
@@ -1090,7 +1086,7 @@ public:
             creatureGroup = sFormationMgr->AddCreatureToGroup(groupID, leader);
             leader->SearchFormation();
 
-            WorldDatabase.PExecute("REPLACE INTO `creature_formations` (`leaderGUID`, `memberGUID`, `dist`, `angle`, `groupAI`) VALUES ('%u', '%u', 0, 0, '%u')",
+            WorldDatabase.PExecute("REPLACE INTO `creature_formations` (`leaderGUID`, `memberGUID`, `groupAI`) VALUES ('%u', '%u', 0, 0, '%u')",
                 groupID, groupID, uint32(groupAI));
 
             handler->PSendSysMessage("Created formation with leader %u", groupID);
@@ -1098,7 +1094,7 @@ public:
 
         FormationInfo group_member;
         group_member.groupID       = groupID;
-        group_member.followAngle   = member->GetAbsoluteAngle(leader) - leader->GetOrientation();
+        group_member.followAngle   = leader->GetAbsoluteAngle(member) - member->GetOrientation();
         group_member.followDist    = sqrtf(pow(leader->GetPositionX() - member->GetPositionX(), int(2)) + pow(leader->GetPositionY() - member->GetPositionY(), int(2)));
         group_member.groupAI       = groupAI;
         creatureGroup->AddMember(member);
@@ -1458,7 +1454,7 @@ public:
         QueryResult result = WorldDatabase.PQuery("SELECT c.spawnId, ce.entry, position_x, position_y, position_z, map, gec.event, "
             "(POW(position_x - '%f', 2) + POW(position_y - '%f', 2) + POW(position_z - '%f', 2)) AS order_ "
             "FROM creature c " 
-            "JOIN creature_entry ce ON c.spawnID = ce.spawnID"
+            "JOIN creature_entry ce ON c.spawnID = ce.spawnID "
             "LEFT JOIN game_event_creature gec ON c.spawnId = gec.guid "
             "WHERE map='%u' AND (POW(position_x - '%f', 2) + POW(position_y - '%f', 2) + POW(position_z - '%f', 2)) <= '%f' " 
             "ORDER BY order_",

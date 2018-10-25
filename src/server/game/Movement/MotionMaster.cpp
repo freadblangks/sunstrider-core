@@ -630,12 +630,12 @@ void MotionMaster::MovePoint(uint32 id, float x, float y, float z, bool generate
 {
     if (_owner->GetTypeId() == TYPEID_PLAYER)
     {
-        TC_LOG_DEBUG("movement.motionmaster", "MotionMaster::MovePoint: '%s', targeted point Id: %u (X: %f, Y: %f, Z: %f)", _owner->GetGUID().ToString().c_str(), id, x, y, z);
+        TC_LOG_TRACE("movement.motionmaster", "MotionMaster::MovePoint: '%s', targeted point Id: %u (X: %f, Y: %f, Z: %f)", _owner->GetGUID().ToString().c_str(), id, x, y, z);
         Add(new PointMovementGenerator<Player>(id, x, y, z, generatePath, 0.0f, finalOrient), MOTION_SLOT_ACTIVE);
     }
     else
     {
-        TC_LOG_DEBUG("movement.motionmaster", "MotionMaster::MovePoint: '%s', targeted point Id: %u (X: %f, Y: %f, Z: %f)", _owner->GetGUID().ToString().c_str(), id, x, y, z);
+        TC_LOG_TRACE("movement.motionmaster", "MotionMaster::MovePoint: '%s', targeted point Id: %u (X: %f, Y: %f, Z: %f)", _owner->GetGUID().ToString().c_str(), id, x, y, z);
         Add(new PointMovementGenerator<Creature>(id, x, y, z, generatePath, 0.0f, finalOrient), MOTION_SLOT_ACTIVE);
     }
 }
@@ -729,7 +729,7 @@ void MotionMaster::MoveFall(uint32 id /*=0*/)
         return;
 
     _owner->AddUnitMovementFlag(MOVEMENTFLAG_JUMPING_OR_FALLING);
-    _owner->m_movementInfo.SetFallTime(0);
+    _owner->SetFallTime(0);
 
     if (_owner->GetTypeId() == TYPEID_PLAYER)
     {
@@ -824,7 +824,8 @@ void MotionMaster::MoveTaxiFlight(uint32 path, uint32 pathnode)
             TC_LOG_DEBUG("movement.motionmaster", "MotionMaster::MoveTaxiFlight: '%s', taxi to path Id: %u (node %u)", _owner->GetGUID().ToString().c_str(), path, pathnode);
 
             // Only one FLIGHT_MOTION_TYPE is allowed
-            Remove(FLIGHT_MOTION_TYPE);
+            bool hasExisting = HasMovementGenerator([](MovementGenerator const* gen) { return gen->GetMovementGeneratorType() == FLIGHT_MOTION_TYPE; });
+            ASSERT(!hasExisting, "Duplicate flight path movement generator");
 
             FlightPathMovementGenerator* movement = new FlightPathMovementGenerator(pathnode);
             movement->LoadPath(_owner->ToPlayer());

@@ -169,10 +169,12 @@ bool ChaseMovementGenerator::Update(Unit* owner, uint32 diff)
 
     bool const mutualChase     = IsMutualChase(owner, target);
     float const hitboxSum      = owner->GetCombatReach() + target->GetCombatReach();
-    float const minRange       = _range ? _range->MinRange + hitboxSum : CONTACT_DISTANCE;
-    float const minTarget      = (_range ? _range->MinTolerance : 0.0f) + hitboxSum;
-    float const maxRange       = _range ? _range->MaxRange + hitboxSum : owner->GetMeleeRange(target); // melee range already includes hitboxes
-    float const maxTarget      = _range ? _range->MaxTolerance + hitboxSum : CONTACT_DISTANCE + hitboxSum;
+    //exact dist min range
+    float const minTolerance   = _range ? _range->MinTolerance + hitboxSum : owner->GetCombatReach();
+    float const minTarget      = (_range ? _range->MinRange : 0.0f) + hitboxSum;
+    //exact dist max range
+    float const maxTolerance   = _range ? _range->MaxTolerance + hitboxSum : owner->GetMeleeRange(target); // melee range already includes hitboxes
+    float const maxTarget      = _range ? _range->MaxRange + hitboxSum : CONTACT_DISTANCE + hitboxSum;
     Optional<ChaseAngle> angle = mutualChase ? Optional<ChaseAngle>() : _angle;
 
     // if we're already moving, periodically check if we're already in the expected range...
@@ -182,7 +184,7 @@ bool ChaseMovementGenerator::Update(Unit* owner, uint32 diff)
             _rangeCheckTimer -= diff;
         else
         {
-            _rangeCheckTimer = RANGE_CHECK_INTERVAL;
+            _rangeCheckTimer = RANGE_CHECK_INTERVAL; 
             if (PositionOkay(owner, target, _movingTowards ? Optional<float>() : minTarget, _movingTowards ? maxTarget : Optional<float>(), angle))
             {
                 _path = nullptr;
@@ -209,7 +211,7 @@ bool ChaseMovementGenerator::Update(Unit* owner, uint32 diff)
     {
         _lastTargetPosition = target->GetPosition();
         _mutualChase = mutualChase;
-        if (owner->HasUnitState(UNIT_STATE_CHASE_MOVE) || !PositionOkay(owner, target, minRange, maxRange, angle))
+        if (owner->HasUnitState(UNIT_STATE_CHASE_MOVE) || !PositionOkay(owner, target, minTolerance, maxTolerance, angle))
         {
             // can we get to the target?
             if (cOwner && !target->isInAccessiblePlaceFor(cOwner))
@@ -221,7 +223,7 @@ bool ChaseMovementGenerator::Update(Unit* owner, uint32 diff)
             }
 
             // figure out which way we want to move
-            bool const moveToward = !owner->IsInDist(target, maxRange);
+            bool const moveToward = !owner->IsInDist(target, maxTolerance);
 
             //sun: always create a new Generator, creature fly/walk/swim may have changed
             _path = std::make_unique<PathGenerator>(owner);
@@ -232,7 +234,7 @@ bool ChaseMovementGenerator::Update(Unit* owner, uint32 diff)
             float x, y, z;
             bool shortenPath;
             // if we want to move toward the target and there's no fixed angle...
-            if (moveToward && !angle)
+            if (moveToward && !angle.is_initialized())
             {
                 // ...we'll pathfind to the center, then shorten the path
                 target->GetPosition(x, y, z);
@@ -242,7 +244,8 @@ bool ChaseMovementGenerator::Update(Unit* owner, uint32 diff)
             {
                 // otherwise, we fall back to nearpoint finding
                 //sun: note that LoS in checked in GetNearPoint, it'll try to get a closer position if target is not in los
-                target->GetNearPoint(owner, x, y, z, (moveToward ? maxTarget : minTarget) - hitboxSum, angle ? target->ToAbsoluteAngle(angle->RelativeAngle) : target->GetAbsoluteAngle(owner));
+                //sun: cancel combat reach added in GetNearPoint
+                target->GetNearPoint(owner, x, y, z, (moveToward ? maxTarget : minTarget) - target->GetCombatReach(), angle.is_initialized() ? target->ToAbsoluteAngle(angle->RelativeAngle) : target->GetAbsoluteAngle(owner));
                 shortenPath = false;
             }
 
@@ -302,7 +305,7 @@ bool ChaseMovementGenerator::Update(Unit* owner, uint32 diff)
         // Handle spreading
         else if(cOwner 
             && !cOwner->IsPet() 
-            && maxRange < 5.0f
+            && maxTolerance < 5.0f
             && !cOwner->IsDungeonBoss() 
             && !cOwner->IsWorldBoss() 
             && !target->isMoving() 

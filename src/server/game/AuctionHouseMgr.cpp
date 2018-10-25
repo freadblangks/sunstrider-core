@@ -179,7 +179,7 @@ void AuctionHouseMgr::SendAuctionSuccessfulMail(AuctionEntry * auction, SQLTrans
             .SendMailTo(trans, MailReceiver(owner, auction->owner), auction, MAIL_CHECK_MASK_COPIED, sWorld->getIntConfig(CONFIG_MAIL_DELIVERY_DELAY));
     }
     else
-        TC_LOG_ERROR("auctionHouse","SendAuctionSuccessfulMail: Mail not sent for some reason to player %s (GUID %u, account %u).", owner ? owner->GetName().c_str() : "<unknown> (maybe offline)", owner ? owner->GetGUID().GetCounter() : 0, owner_accId);
+        TC_LOG_ERROR("auctionHouse","SendAuctionSuccessfulMail: Mail not sent for some reason to player (GUID %u, account %u).", owner_guid.GetCounter(), owner_accId);
 }
 
 //does not clear ram
@@ -334,8 +334,8 @@ void AuctionHouseMgr::LoadAuctions()
         {
             AuctionHouseMgr::SendAuctionExpiredMail(aItem, trans);
             aItem->DeleteFromDB(trans);
+            TC_LOG_ERROR("misc", "Auction %u has not a existing auctioneer (GUID : %u Entry: %u)", aItem->Id, aItem->auctioneer, auctioneerData->GetFirstSpawnEntry());
             delete aItem;
-            TC_LOG_ERROR("misc","Auction %u has not a existing auctioneer (GUID : %u Entry: %u)", aItem->Id, aItem->auctioneer, auctioneerData->GetFirstSpawnEntry());
             continue;
         }
 

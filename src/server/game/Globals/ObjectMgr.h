@@ -91,7 +91,7 @@ typedef std::unordered_map<uint32, GameTele> GameTeleContainer;
 enum eScriptFlags
 {    
     // Talk Flags
-    SF_TALK_USE_PLAYER          = 0x1,
+    SF_TALK_USE_PLAYER            = 0x1,
 
     // CastSpell flags
     SF_CASTSPELL_SOURCE_TO_TARGET = 0,
@@ -99,12 +99,14 @@ enum eScriptFlags
     SF_CASTSPELL_TARGET_TO_TARGET = 2,
     SF_CASTSPELL_TARGET_TO_SOURCE = 3,
     SF_CASTSPELL_SEARCH_CREATURE  = 4,
-    SF_CASTSPELL_TRIGGERED      = 0x1,
+    SF_CASTSPELL_TRIGGERED        = 0x1,
 
-    
+    // RemoveAura flags
+    SF_REMOVEAURA_REVERSE         = 0x1,
+
     // PlaySound flags
-    SF_PLAYSOUND_TARGET_PLAYER  = 0x1,
-    SF_PLAYSOUND_DISTANCE_SOUND = 0x2,
+    SF_PLAYSOUND_TARGET_PLAYER    = 0x1,
+    SF_PLAYSOUND_DISTANCE_SOUND   = 0x2,
 };
 
 
@@ -394,10 +396,8 @@ typedef std::unordered_map<uint16, InstanceTemplateAddon> InstanceTemplateAddonC
 
 struct PetLevelInfo
 {
-    PetLevelInfo() : health(0), mana(0), minDamage(0), maxDamage(0) 
+    PetLevelInfo() : health(0), mana(0), minDamage(0), maxDamage(0), armor(0), stats()
     { 
-        for(uint16& stat : stats)
-            stat = 0; 
     }
 
     uint16 stats[MAX_STATS];

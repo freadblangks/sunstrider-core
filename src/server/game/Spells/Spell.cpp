@@ -1419,7 +1419,7 @@ void Spell::SelectImplicitCasterDestTargets(SpellEffIndex effIndex, SpellImplici
         float dis = (float)rand_norm() * (max_dis - min_dis) + min_dis;
         float x, y, z, angle;
         angle = (float)rand_norm() * static_cast<float>(M_PI * 35.0f / 180.0f) - static_cast<float>(M_PI * 17.5f / 180.0f);
-        m_caster->GetClosePoint(x, y, z, dis, angle);
+        m_caster->GetClosePoint(x, y, z, DEFAULT_PLAYER_BOUNDING_RADIUS, dis, angle);
 
         float ground = m_caster->GetMapHeight(x, y, z);
         float liquidLevel = VMAP_INVALID_HEIGHT_VALUE;
@@ -2990,7 +2990,7 @@ bool Spell::UpdateChanneledTargetList()
         for (auto & ihit : m_UniqueTargetInfo)
             if (ihit.MissCondition == SPELL_MISS_NONE && (channelAuraMask & ihit.EffectMask))
                 if (Unit* unit = m_caster->GetGUID() == ihit.TargetGUID ? m_caster->ToUnit() : ObjectAccessor::GetUnit(*m_caster, ihit.TargetGUID))
-                    if (unit && IsValidDeadOrAliveTarget(unit))
+                    if (IsValidDeadOrAliveTarget(unit))
                         if (auto* aurApp = unit->GetAuraApplication(m_spellInfo->Id, m_originalCasterGUID))
                         {
                             ihit.EffectMask &= ~aurApp->GetEffectMask();
@@ -3095,7 +3095,7 @@ SpellMissInfo Spell::PreprocessSpellHit(Unit* unit, bool scaleAura, TargetInfo& 
             }
             if (unit->IsInCombat() && m_spellInfo->HasInitialAggro())
             {
-                if (m_originalCaster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED)) // only do explicit combat forwarding for PvP enabled units
+                if (m_originalCaster && m_originalCaster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED)) // only do explicit combat forwarding for PvP enabled units
                     m_originalCaster->GetCombatManager().InheritCombatStatesFrom(unit);    // for creature v creature combat, the threat forward does it for us
                 unit->GetThreatManager().ForwardThreatForAssistingMe(m_originalCaster, 0.0f, nullptr, true);
             }
@@ -3518,7 +3518,7 @@ void Spell::cancel()
 
             m_appliedMods.clear();
 
-            if (GetCaster() && m_spellInfo)
+            if (GetCaster())
             {
                 if (Player *tmpPlayer = GetCaster()->ToPlayer())
                 {
@@ -3554,7 +3554,7 @@ void Spell::cancel()
     m_spellState = oldState;
     //TC_LOG_DEBUG("FIXME","Spell %u - m_spellState = oldState = %u", m_spellInfo->Id,m_spellState);
 
-    if (GetCaster() && m_spellInfo)
+    if (GetCaster())
     {
         if (Player *tmpPlayer = GetCaster()->ToPlayer())
         {
@@ -5600,6 +5600,12 @@ SpellCastResult Spell::CheckCast(bool strict, uint32* param1 /*= nullptr*/, uint
                 (IsAutoRepeat() || (m_spellInfo->AuraInterruptFlags & AURA_INTERRUPT_FLAG_NOT_SEATED) != 0) )
                 return SPELL_FAILED_MOVING;
         }
+    }
+    else if (GameObject* obj = m_caster->ToGameObject())
+    {
+        //sun: a gameobject should never cast a channeled spell (according to TC)
+        if (m_spellInfo->IsChanneled())
+            return SPELL_FAILED_ERROR;
     }
 
     // check spell cast conditions from database

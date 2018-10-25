@@ -101,7 +101,7 @@ enum ServerMessageType
 
 /// World constructor
 World::World()
-    : _CITesting(false)
+    : _CITesting(false), pvp_ranks(), m_startTime(0), mail_timer(0), mail_timer_expires(0), rate_values()
 {
     m_playerLimit = 0;
     m_allowedSecurityLevel = SEC_PLAYER;
@@ -591,6 +591,7 @@ void World::LoadConfigSettings(bool reload)
     m_configs[CONFIG_ANTICHEAT_MOVEMENT_KILL] = sConfigMgr->GetBoolDefault("Anticheat.Movement.Kill", false);
     m_configs[CONFIG_ANTICHEAT_MOVEMENT_WARN_GM] = sConfigMgr->GetBoolDefault("Anticheat.Movement.Warn", true);
     m_configs[CONFIG_ANTICHEAT_MOVEMENT_WARN_GM_COOLDOWN] = sConfigMgr->GetBoolDefault("Anticheat.Movement.Warn.Cooldown", 120);
+    m_configs[CONFIG_PENDING_MOVE_CHANGES_TIMEOUT] = sConfigMgr->GetIntDefault("Anticheat.Movement.PendingMoveChangesTimeoutTime", 5000);
 
     m_wardenBanTime                         = sConfigMgr->GetStringDefault("Warden.BanTime","180d");
 
@@ -1401,7 +1402,6 @@ void World::SetInitialWorldSettings()
 
     ///- Check the existence of the map files for all races' startup areas.
     if(    !MapManager::ExistMapAndVMap(0,-6240.32f, 331.033f)
-        || !MapManager::ExistMapAndVMap(0,-8949.95f,-132.493f)
         || !MapManager::ExistMapAndVMap(0,-8949.95f,-132.493f)
         || !MapManager::ExistMapAndVMap(1,-618.518f,-4251.67f)
         || !MapManager::ExistMapAndVMap(0, 1676.35f, 1677.45f)

@@ -1,4 +1,3 @@
-﻿
 #include "Common.h"
 #include "SharedDefines.h"
 #include "WorldPacket.h"
@@ -160,8 +159,8 @@ void Object::BuildCreateUpdateBlockForPlayer(UpdateData *data, Player *target) c
     if(!target)
         return;
 
-    uint8  updateType = UPDATETYPE_CREATE_OBJECT;
-    uint8  flags = m_updateFlag;
+    uint8 updateType = UPDATETYPE_CREATE_OBJECT;
+    uint8 flags = m_updateFlag;
 
     // lower flag1
     if(target == this)                                      // building packet for oneself
@@ -794,6 +793,7 @@ WorldObject::WorldObject(bool isWorldObject) :
     m_isTempWorldObject(false),
     m_transport(nullptr),
     m_phaseMask(PHASEMASK_NORMAL),
+    m_outdoors(false),
     _forceHitResultOverride(SPELL_FORCE_HIT_DEFAULT)
 {
     m_positionX         = 0.0f;
@@ -824,7 +824,7 @@ bool WorldObject::IsWorldObject() const
     return false;
 }
 
-void WorldObject::SetKeepActive( bool on )
+void WorldObject::SetKeepActive(bool on)
 {
     if(m_isActive == on)
         return;
@@ -1466,24 +1466,6 @@ void Object::ForceValuesUpdateAtIndex(uint32 i)
     AddToObjectUpdateIfNeeded();
 }
 
-void WorldObject::BuildHeartBeatMsg(WorldPacket* data) const
-{
-    //Heartbeat message cannot be used for non-units
-    if (!isType(TYPEMASK_UNIT))
-        return;
-
-    data->Initialize(MSG_MOVE_HEARTBEAT, 32);
-    *data << GetPackGUID();
-    *data << uint32(((Unit*)this)->GetUnitMovementFlags()); // movement flags
-    *data << uint8(0);                                      // 2.3.0
-    *data << GetMSTime();                                   // time
-    *data << m_positionX;
-    *data << m_positionY;
-    *data << m_positionZ;
-    *data << m_orientation;
-    *data << uint32(0);
-}
-
 void WorldObject::SendMessageToSet(WorldPacket const* data, bool self)
 {
     if (IsInWorld()) 
@@ -2099,17 +2081,10 @@ void WorldObject::GetGroundPoint(float &x, float &y, float &z, float dist, float
     UpdateGroundPositionZ(x, y, z);
 }
 
-void WorldObject::GetChasePoint(float &x, float &y, float &z, float distance2d, float angle) const
-{
-    //NYI implemented, use regular GetClosePoint for now
-    //Maybe look for Nost or Sunwell impl
-    GetClosePoint(x, y, z, distance2d, angle);
-}
-
-void WorldObject::GetClosePoint(float &x, float &y, float &z, float distance2d, float angle) const
+void WorldObject::GetClosePoint(float &x, float &y, float &z, float size, float distance2d, float angle) const
 {
     // angle calculated from current orientation
-    GetNearPoint(nullptr, x, y, z, distance2d, GetOrientation() + angle);
+    GetNearPoint(nullptr, x, y, z, distance2d+size, GetOrientation() + angle);
 }
 
 void WorldObject::GetContactPoint(const WorldObject* obj, float &x, float &y, float &z, float distance2d) const
@@ -2308,7 +2283,7 @@ void Object::BuildMovementUpdate(ByteBuffer* data, uint16 flags) const
     if (flags & UPDATEFLAG_LIVING)
     {
         ASSERT(unit);
-        unit->BuildMovementPacket(data);
+        unit->GetMovementInfo().WriteContentIntoPacket(data);
 
         *data << unit->GetSpeed(MOVE_WALK)
               << unit->GetSpeed(MOVE_RUN)
@@ -2323,7 +2298,7 @@ void Object::BuildMovementUpdate(ByteBuffer* data, uint16 flags) const
 #endif
 
         // 0x08000000
-        if (unit->m_movementInfo.GetMovementFlags() & MOVEMENTFLAG_SPLINE_ENABLED)
+        if (unit->GetMovementInfo().GetMovementFlags() & MOVEMENTFLAG_SPLINE_ENABLED)
             Movement::PacketBuilder::WriteCreate(*unit->movespline, *data);
     }
     else
@@ -2487,6 +2462,133 @@ void Object::BuildMovementUpdate(ByteBuffer* data, uint16 flags) const
     if (flags & UPDATEFLAG_ROTATION)
         *data << int64(0 /*ToGameObject()->GetPackedWorldRotation()*/); //TODO
 #endif
+}
+
+void MovementInfo::OutDebug() const
+{
+    TC_LOG_DEBUG("misc", "MOVEMENT INFO");
+#ifdef LICH_KING
+    TC_LOG_DEBUG("misc", "%s", guid.ToString().c_str());
+#endif
+    TC_LOG_DEBUG("misc", "flags %u", flags);
+    TC_LOG_DEBUG("misc", "flags2 %u", flags2);
+    TC_LOG_DEBUG("misc", "time %u current time " UI64FMTD "", flags2, uint64(::time(nullptr)));
+    TC_LOG_DEBUG("misc", "position: `%s`", pos.ToString().c_str());
+    if (flags & MOVEMENTFLAG_ONTRANSPORT)
+    {
+        TC_LOG_DEBUG("misc", "TRANSPORT:");
+        TC_LOG_DEBUG("misc", "%s", transport.guid.ToString().c_str());
+        TC_LOG_DEBUG("misc", "position: `%s`", transport.pos.ToString().c_str());
+        TC_LOG_DEBUG("misc", "time: %u", transport.time);
+#ifdef LICH_KING
+        TC_LOG_DEBUG("misc", "seat: %i", transport.seat);
+        if (flags2 & MOVEMENTFLAG2_INTERPOLATED_MOVEMENT)
+            TC_LOG_DEBUG("misc", "time2: %u", transport.time2);
+#endif
+    }
+
+    if ((flags & (MOVEMENTFLAG_SWIMMING | MOVEMENTFLAG_PLAYER_FLYING)) 
+#ifdef LICH_KING
+        || (flags2 & MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING)
+#endif
+        )
+        TC_LOG_DEBUG("misc", "pitch: %f", pitch);
+
+    TC_LOG_DEBUG("misc", "fallTime: %u", fallTime);
+    if (flags & MOVEMENTFLAG_JUMPING_OR_FALLING)
+        TC_LOG_DEBUG("misc", "j_zspeed: %f j_sinAngle: %f j_cosAngle: %f j_xyspeed: %f", jump.zspeed, jump.sinAngle, jump.cosAngle, jump.xyspeed);
+
+    if (flags & MOVEMENTFLAG_SPLINE_ELEVATION)
+        TC_LOG_DEBUG("misc", "splineElevation: %f", splineElevation);
+}
+
+void MovementInfo::WriteContentIntoPacket(ByteBuffer * data, bool includeGuid /* = false*/) const
+{
+    if (includeGuid)
+        *data << guid.WriteAsPacked();
+
+    *data << flags;
+    *data << flags2;
+    *data << time;
+    *data << TaggedPosition<Position::XYZO>(pos);
+    if (HasMovementFlag(MOVEMENTFLAG_ONTRANSPORT))
+    {
+#ifdef LICH_KING
+        *data << transport.guid.WriteAsPacked();
+        *data << TaggedPosition<Position::XYZO>(transport.pos);
+        *data << transport.time;
+        *data << transport.seat;
+        if (HasExtraMovementFlag(MOVEMENTFLAG2_INTERPOLATED_MOVEMENT))
+            *data << transport.time2;
+#else
+        *data << transport.guid;
+        *data << transport.pos.PositionXYZOStream();
+        *data << transport.time;
+#endif
+    }
+    if (HasMovementFlag(MovementFlags(MOVEMENTFLAG_SWIMMING | MOVEMENTFLAG_PLAYER_FLYING)) 
+#ifdef LICH_KING
+        || HasExtraMovementFlag(MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING)
+#endif
+        )
+        *data << pitch;
+
+    *data << fallTime;
+    if (HasMovementFlag(MOVEMENTFLAG_JUMPING_OR_FALLING))
+    {
+        *data << jump.zspeed;
+        *data << jump.cosAngle;
+        *data << jump.sinAngle;
+        *data << jump.xyspeed;
+    }
+    if (HasMovementFlag(MOVEMENTFLAG_SPLINE_ELEVATION))
+        *data << splineElevation;
+}
+
+void MovementInfo::FillContentFromPacket(ByteBuffer * data, bool includeGuid /* = false*/)
+{
+    if (includeGuid)
+#ifdef LICH_KING
+        *data >> guid.ReadAsPacked();
+#else
+        *data >> guid;
+#endif
+
+    *data >> flags;
+    *data >> flags2;
+    *data >> time;
+    *data >> pos.PositionXYZOStream();
+    if (HasMovementFlag(MOVEMENTFLAG_ONTRANSPORT))
+    {
+#ifdef LICH_KING
+        *data >> transport.guid.ReadAsPacked();
+        *data >> transport.pos.PositionXYZOStream();
+        *data >> transport.time;
+        *data >> transport.seat;
+        if (HasExtraMovementFlag(MOVEMENTFLAG2_INTERPOLATED_MOVEMENT))
+            *data >> transport.time2;
+#else
+        *data >> transport.guid;
+        *data >> transport.pos.PositionXYZOStream();
+        *data >> transport.time;
+#endif
+    }
+    if (HasMovementFlag(MovementFlags(MOVEMENTFLAG_SWIMMING | MOVEMENTFLAG_PLAYER_FLYING)) 
+#ifdef LICH_KING
+        || (HasExtraMovementFlag(MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING))
+#endif
+        )
+        *data >> pitch;
+    *data >> fallTime;
+    if (HasMovementFlag(MOVEMENTFLAG_JUMPING_OR_FALLING))
+    {
+        *data >> jump.zspeed;
+        *data >> jump.cosAngle;
+        *data >> jump.sinAngle;
+        *data >> jump.xyspeed;
+    }
+    if (HasMovementFlag(MOVEMENTFLAG_SPLINE_ELEVATION))
+        *data >> splineElevation;
 }
 
 void WorldObject::MovePosition(Position &pos, float dist, float angle)
@@ -2706,6 +2808,74 @@ float WorldObject::GetMapWaterOrGroundLevel(float x, float y, float z, float* gr
 float WorldObject::GetMapHeight(float x, float y, float z, bool vmap/* = true*/, float distanceToSearch/* = DEFAULT_HEIGHT_SEARCH*/) const
 {
     return GetMap()->GetHeight(GetPhaseMask(), x, y, z, vmap, distanceToSearch, GetCollisionHeight());
+}
+
+void WorldObject::SetTransport(Transport* transport)
+{
+    if (transport)
+    {
+        m_movementInfo.transport.guid = transport->GetGUID();
+        // could it be possible to initialize the rest of the transport data (seat, time, offset) here?
+        AddUnitMovementFlag(MOVEMENTFLAG_ONTRANSPORT);
+    }
+    else // if(!m_vehicle) ?
+    {
+        m_movementInfo.transport.Reset();
+        RemoveUnitMovementFlag(MOVEMENTFLAG_ONTRANSPORT);
+    }
+    m_transport = transport;
+}
+
+MovementInfo const& WorldObject::_GetMovementInfo() const
+{
+    return m_movementInfo;
+}
+
+MovementInfo WorldObject::GetMovementInfo() const
+{
+    //almost a copy... except for the positions
+    MovementInfo mInfo;
+    mInfo.guid = GetGUID();
+    mInfo.SetMovementFlags(GetUnitMovementFlags());
+    mInfo.SetExtraMovementFlags(GetExtraUnitMovementFlags());
+    mInfo.time = m_movementInfo.time;
+    mInfo.pos.Relocate(
+        GetPositionX(),
+        GetPositionY(),
+        GetPositionZ(),
+        GetOrientation()
+    );
+
+    if (GetUnitMovementFlags() & MOVEMENTFLAG_ONTRANSPORT)
+    {
+        mInfo.transport.guid = GetTransGUID();
+        mInfo.transport.pos.Relocate(GetTransOffsetX(), GetTransOffsetY(), GetTransOffsetZ(), GetTransOffsetO());
+        mInfo.transport.time = GetTransTime();
+#ifdef LICH_KING
+        mInfo.transport.seat = GetTransSeat();
+        if (GetExtraUnitMovementFlags() & MOVEMENTFLAG2_INTERPOLATED_MOVEMENT)
+            mInfo.transport.time2 = m_movementInfo.transport.time2;
+#endif
+    }
+    if ((GetUnitMovementFlags() & (MOVEMENTFLAG_SWIMMING | MOVEMENTFLAG_JUMPING_OR_FALLING))
+#ifdef LICH_KING
+        || (m_movementInfo.flags2 & MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING)
+#endif
+        )
+        mInfo.pitch = m_movementInfo.pitch;
+
+    mInfo.SetFallTime(m_movementInfo.fallTime);
+    if (GetUnitMovementFlags() & MOVEMENTFLAG_JUMPING_OR_FALLING)
+    {
+        mInfo.jump.zspeed = m_movementInfo.jump.zspeed;
+        mInfo.jump.sinAngle = m_movementInfo.jump.sinAngle;
+        mInfo.jump.cosAngle = m_movementInfo.jump.cosAngle;
+        mInfo.jump.xyspeed = m_movementInfo.jump.xyspeed;
+    }
+    if (GetUnitMovementFlags() & MOVEMENTFLAG_SPLINE_ELEVATION)
+        mInfo.splineElevation = m_movementInfo.splineElevation;
+
+    return mInfo;
 }
 
 ObjectGuid WorldObject::GetCharmerOrOwnerOrOwnGUID() const
@@ -3026,7 +3196,7 @@ SpellMissInfo WorldObject::MeleeSpellHitResult(Unit* /*victim*/, SpellInfo const
 SpellMissInfo WorldObject::MagicSpellHitResult(Unit *pVictim, SpellInfo const *spell, Item* castItem) const
 {
     // Can`t miss on dead target (on skinning for example)
-    if ((!pVictim->IsAlive() && pVictim->GetTypeId() != TYPEID_PLAYER))
+    if (!pVictim->IsAlive() && pVictim->GetTypeId() != TYPEID_PLAYER)
         return SPELL_MISS_NONE;
         
     // Always 1% resist chance. Send this as SPELL_MISS_MISS (note that this is not BC blizzlike, this was changed in WotLK).
@@ -3701,10 +3871,10 @@ bool WorldObject::IsValidAssistTarget(WorldObject const* target, SpellInfo const
     }
     // PvC case - player can assist creature only if has specific type flags or if player is charmed by it
     // !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED) &&
-    else if (unit && unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED)
+    else if (unit && unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED
         && (!bySpell || !bySpell->HasAttribute(SPELL_ATTR6_ASSIST_IGNORE_IMMUNE_FLAG))
-        && (unitTarget && !unitTarget->IsPvP())
-        && (unit && unitTarget && unit->GetCharmerGUID() != unitTarget->GetGUID())
+        && unitTarget && !unitTarget->IsPvP()
+        && unit->GetCharmerGUID() != unitTarget->GetGUID())
         )
     {
         if (Creature const* creatureTarget = target->ToCreature())

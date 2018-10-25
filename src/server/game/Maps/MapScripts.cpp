@@ -27,7 +27,7 @@ void Map::ScriptsStart(std::map<uint32, std::multimap<uint32, ScriptInfo>> const
     // prepare static data
     ObjectGuid sourceGUID = source ? source->GetGUID() : ObjectGuid::Empty; //some script commands doesn't have source
     ObjectGuid targetGUID = target ? target->GetGUID() : ObjectGuid::Empty;
-    ObjectGuid ownerGUID  = (source->GetTypeId()==TYPEID_ITEM) ? ((Item*)source)->GetOwnerGUID() : ObjectGuid::Empty;
+    ObjectGuid ownerGUID  = (source && source->GetTypeId() == TYPEID_ITEM) ? ((Item*)source)->GetOwnerGUID() : ObjectGuid::Empty;
 
     ///- Schedule script execution for all scripts in the script map
     ScriptMap const *s2 = &(s->second);
@@ -121,7 +121,7 @@ void Map::ScriptsProcess()
                     break;
             case HighGuid::Transport:
                 case HighGuid::GameObject:
-                    source = source = GetGameObject(step.sourceGUID);
+                    source = GetGameObject(step.sourceGUID);
                     break;
                 case HighGuid::Corpse:
                     source = GetCorpse(step.sourceGUID);
@@ -403,7 +403,6 @@ void Map::ScriptsProcess()
                 }
 
                 if( go->GetGoType()==GAMEOBJECT_TYPE_FISHINGNODE ||
-                    go->GetGoType()==GAMEOBJECT_TYPE_FISHINGNODE ||
                     go->GetGoType()==GAMEOBJECT_TYPE_DOOR        ||
                     go->GetGoType()==GAMEOBJECT_TYPE_BUTTON      ||
                     go->GetGoType()==GAMEOBJECT_TYPE_TRAP )
@@ -487,55 +486,33 @@ void Map::ScriptsProcess()
 
             case SCRIPT_COMMAND_ACTIVATE_OBJECT:
             {
-                if(!source)
+                if (Unit* unit = _GetScriptUnit(source, true, step.script))
                 {
-                    TC_LOG_ERROR("scripts","SCRIPT_COMMAND_ACTIVATE_OBJECT must have source caster.");
-                    break;
+                    if (!target)
+                    {
+                        TC_LOG_ERROR("scripts", "SCRIPT_COMMAND_ACTIVATE_OBJECT call for NULL gameobject.");
+                        break;
+                    }
+
+                    if (target->GetTypeId() != TYPEID_GAMEOBJECT)
+                    {
+                        TC_LOG_ERROR("scripts", "SCRIPT_COMMAND_ACTIVATE_OBJECT call for non-gameobject (TypeId: %u), skipping.", target->GetTypeId());
+                        break;
+                    }
+
+                    if (GameObject* pGO = target->ToGameObject())
+                        pGO->Use(unit);
                 }
 
-                if(!source->isType(TYPEMASK_UNIT))
-                {
-                    TC_LOG_ERROR("scripts","SCRIPT_COMMAND_ACTIVATE_OBJECT source caster isn't unit (TypeId: %u), skipping.",source->GetTypeId());
-                    break;
-                }
-
-                if(!target)
-                {
-                    TC_LOG_ERROR("scripts","SCRIPT_COMMAND_ACTIVATE_OBJECT call for NULL gameobject.");
-                    break;
-                }
-
-                if(target->GetTypeId()!=TYPEID_GAMEOBJECT)
-                {
-                    TC_LOG_ERROR("scripts","SCRIPT_COMMAND_ACTIVATE_OBJECT call for non-gameobject (TypeId: %u), skipping.",target->GetTypeId());
-                    break;
-                }
-
-                Unit* caster = (Unit*)source;
-
-                GameObject *go = (GameObject*)target;
-
-                go->Use(caster);
                 break;
             }
 
             case SCRIPT_COMMAND_REMOVE_AURA:
             {
-                Object* cmdTarget = step.script->RemoveAura.Flags ? source : target;
-
-                if(!cmdTarget)
-                {
-                    TC_LOG_ERROR("scripts", "SCRIPT_COMMAND_REMOVE_AURA call for NULL %s.", step.script->RemoveAura.Flags ? "source" : "target");
-                    break;
-                }
-
-                if(!cmdTarget->isType(TYPEMASK_UNIT))
-                {
-                    TC_LOG_ERROR("scripts", "SCRIPT_COMMAND_REMOVE_AURA %s isn't unit (TypeId: %u), skipping.",step.script->RemoveAura.Flags ? "source" : "target",cmdTarget->GetTypeId());
-                    break;
-                }
-
-                ((Unit*)cmdTarget)->RemoveAurasDueToSpell(step.script->RemoveAura.SpellID);
+                // Source (datalong2 != 0) or target (datalong2 == 0) must be Unit.
+                bool bReverse = step.script->RemoveAura.Flags & SF_REMOVEAURA_REVERSE;
+                if (Unit* unit = _GetScriptUnit(bReverse ? source : target, bReverse, step.script))
+                    unit->RemoveAurasDueToSpell(step.script->RemoveAura.SpellID);
                 break;
             }
 
@@ -559,11 +536,11 @@ void Map::ScriptsProcess()
                 switch (step.script->CastSpell.Flags)
                 {
                 case SF_CASTSPELL_SOURCE_TO_TARGET: // source -> target
-                    uSource = source ? source->ToUnit() : nullptr;
+                    uSource = source->ToUnit();
                     uTarget = target ? target->ToUnit() : nullptr;
                     break;
                 case SF_CASTSPELL_SOURCE_TO_SOURCE: // source -> source
-                    uSource = source ? source->ToUnit() : nullptr;
+                    uSource = source->ToUnit();
                     uTarget = uSource;
                     break;
                 case SF_CASTSPELL_TARGET_TO_TARGET: // target -> target
@@ -572,10 +549,10 @@ void Map::ScriptsProcess()
                     break;
                 case SF_CASTSPELL_TARGET_TO_SOURCE: // target -> source
                     uSource = target ? target->ToUnit() : nullptr;
-                    uTarget = source ? source->ToUnit() : nullptr;
+                    uTarget = source->ToUnit();
                     break;
                 case SF_CASTSPELL_SEARCH_CREATURE: // source -> creature with entry
-                    uSource = source ? source->ToUnit() : nullptr;
+                    uSource = source->ToUnit();
                     uTarget = uSource ? uSource->FindNearestCreature(abs(step.script->CastSpell.CreatureEntry), step.script->CastSpell.SearchRadius) : nullptr;
                     break;
                 }
@@ -603,25 +580,16 @@ void Map::ScriptsProcess()
 
             case SCRIPT_COMMAND_LOAD_PATH:
             {
-                if(!source)
+                if (Unit* unit = _GetScriptUnit(source, true, step.script))
                 {
-                    TC_LOG_ERROR("sql.sql","SCRIPT_COMMAND_START_MOVE is tried to apply to NON-existing unit.");
-                    break;
-                }
+                    if (!sWaypointMgr->GetPath(step.script->LoadPath.PathID))
+                    {
+                        TC_LOG_ERROR("sql.sql", "SCRIPT_COMMAND_START_MOVE source mover has an invalid path (%u), skipping.", step.script->LoadPath.PathID);
+                        break;
+                    }
 
-                if(!source->isType(TYPEMASK_UNIT))
-                {
-                    TC_LOG_ERROR("sql.sql","SCRIPT_COMMAND_START_MOVE source mover isn't unit (TypeId: %u), skipping.",source->GetTypeId());
-                    break;
+                    unit->GetMotionMaster()->MovePath(step.script->LoadPath.PathID, step.script->LoadPath.IsRepeatable != 0);
                 }
-
-                if(!sWaypointMgr->GetPath(step.script->LoadPath.PathID))
-                {
-                    TC_LOG_ERROR("sql.sql","SCRIPT_COMMAND_START_MOVE source mover has an invalid path (%u), skipping.", step.script->LoadPath.PathID);
-                    break;
-                }
-
-                dynamic_cast<Unit*>(source)->GetMotionMaster()->MovePath(step.script->LoadPath.PathID, step.script->LoadPath.IsRepeatable != 0);
                 break;
             }
 

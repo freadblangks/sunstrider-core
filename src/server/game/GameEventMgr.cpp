@@ -553,7 +553,7 @@ void GameEventMgr::LoadFromDB()
             Field *fields = result->Fetch();
 
             ObjectGuid::LowType guid     = fields[0].GetUInt32();
-            uint16 event_id = fields[1].GetUInt16();
+            uint16 event_id = fields[1].GetUInt32();
             uint32 creatureID = fields[4].GetUInt32();
 
             if(event_id >= mGameEventModelEquip.size())
@@ -603,7 +603,7 @@ void GameEventMgr::LoadFromDB()
 
             uint32 id       = fields[0].GetUInt32();
             uint32 quest    = fields[1].GetUInt32();
-            uint16 event_id = fields[2].GetUInt16();
+            uint16 event_id = fields[2].GetUInt32();
 
             if(event_id >= mGameEventCreatureQuests.size())
             {
@@ -1069,7 +1069,7 @@ void GameEventMgr::SpawnCreature(uint32 spawnId)
         // We use spawn coords to spawn
         if(!map->Instanceable() && map->IsGridLoaded(data->spawnPoint))
         {
-            auto  pCreature = new Creature;
+            Creature* pCreature = new Creature;
             //TC_LOG_DEBUG("gameevent","Spawning creature %u",*itr);
             if (!pCreature->LoadFromDB(spawnId, map, true, false))
             {
@@ -1116,7 +1116,7 @@ void GameEventMgr::GameEventSpawn(int16 event_id)
     for(auto itr : mGameEventCreatureGuids[internal_event_id])
         SpawnCreature(itr);
 
-    if(internal_event_id < 0 || internal_event_id >= mGameEventGameobjectGuids.size())
+    if(internal_event_id >= mGameEventGameobjectGuids.size())
     {
         TC_LOG_ERROR("gameevent", "GameEventMgr::GameEventSpawn attempt access to out of range mGameEventGameobjectGuids element %i (size: %u)", internal_event_id, (uint32)mGameEventGameobjectGuids.size());
         return;
@@ -1185,7 +1185,7 @@ void GameEventMgr::GameEventUnspawn(int16 event_id)
         DespawnCreature(itr,event_id);
     }
 
-    if(internal_event_id < 0 || internal_event_id >= mGameEventGameobjectGuids.size())
+    if(internal_event_id >= mGameEventGameobjectGuids.size())
     {
         TC_LOG_ERROR("gameevent", "GameEventMgr::GameEventUnspawn attempt access to out of range mGameEventGameobjectGuids element %i (size: %u)", internal_event_id, (uint32)mGameEventGameobjectGuids.size());
         return;
@@ -1676,6 +1676,7 @@ bool GameEventMgr::CreateGameEvent(const char* name,int16& event_id)
         return false;
     }
 
+    //ASSERT(mGameEvent.size() < MAXINT16);
     event_id = mGameEvent.size();
     /*
     // crash crash crash. Remember events may not be continguous, probably the problem here

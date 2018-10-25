@@ -1274,8 +1274,7 @@ void AuraEffect::HandlePeriodicHealAurasTick(Unit* target, Unit* caster, uint32 
     SpellPeriodicAuraLogInfo pInfo(this, heal, 0, 0, 0.0f);
     target->SendPeriodicAuraLog(&pInfo);
 
-    if (caster)
-        target->GetThreatManager().ForwardThreatForAssistingMe(caster, healInfo.GetEffectiveHeal() * 0.5f, GetSpellInfo());
+    target->GetThreatManager().ForwardThreatForAssistingMe(caster, healInfo.GetEffectiveHeal() * 0.5f, GetSpellInfo());
 
     bool haveCastItem = GetBase()->GetCastItemGUID() != 0;
 
@@ -1291,8 +1290,7 @@ void AuraEffect::HandlePeriodicHealAurasTick(Unit* target, Unit* caster, uint32 
         uint32 funnelAbsorb = 0;
         Unit::DealDamageMods(caster, funnelDamage, &funnelAbsorb);
 
-        if (caster)
-            caster->SendSpellNonMeleeDamageLog(caster, GetId(), funnelDamage, GetSpellInfo()->GetSchoolMask(), funnelAbsorb, 0, true, 0, false);
+        caster->SendSpellNonMeleeDamageLog(caster, GetId(), funnelDamage, GetSpellInfo()->GetSchoolMask(), funnelAbsorb, 0, true, 0, false);
 
         CleanDamage cleanDamage = CleanDamage(0, 0, BASE_ATTACK, MELEE_HIT_NORMAL);
         Unit::DealDamage(caster, caster, funnelDamage, &cleanDamage, SELF_DAMAGE, GetSpellInfo()->GetSchoolMask(), GetSpellInfo(), true);
@@ -1531,14 +1529,14 @@ void AuraEffect::HandlePeriodicTriggerSpellAuraTick(Unit* target, Unit* caster, 
     SpellInfo const* triggeredSpellInfo = sSpellMgr->GetSpellInfo(triggerSpellId);
     if (!triggeredSpellInfo)
     {
-        if(triggerSpellId)
+       /* if(triggerSpellId)
             TC_LOG_WARN("spells", "AuraEffect::HandlePeriodicTriggerSpellAuraTick: Spell %u has non-existent spell %u in EffectTriggered[%d] and is therefore not triggered.", GetId(), triggerSpellId, GetEffIndex());
-        return;
+        return;*/
     }
 
     bool castByTarget = false;
     //sun: Spells such as 34168, 29213, 38652 are broken if cast by target. Tentative generic fix with SPELL_ATTR0_UNK11
-    if (!triggeredSpellInfo->NeedsToBeTriggeredByCaster(m_spellInfo) && GetSpellInfo()->HasAttribute(SPELL_ATTR0_UNK11))
+    if (triggeredSpellInfo && !triggeredSpellInfo->NeedsToBeTriggeredByCaster(m_spellInfo) && GetSpellInfo()->HasAttribute(SPELL_ATTR0_UNK11))
         castByTarget = true;
 
     Unit* triggerCaster = castByTarget ? target : caster;
@@ -1987,7 +1985,7 @@ void AuraEffect::HandlePeriodicTriggerSpellAuraTick(Unit* target, Unit* caster, 
 
     SpellCastTargets targets;
     targets.SetUnitTarget(target);
-    if (triggeredSpellInfo->IsChannelCategorySpell() && GetBase()->GetChannelTargetData())
+    if (triggeredSpellInfo && triggeredSpellInfo->IsChannelCategorySpell() && GetBase()->GetChannelTargetData())
     {
         targets.SetDstChannel(GetBase()->GetChannelTargetData()->spellDst);
         targets.SetObjectTargetChannel(GetBase()->GetChannelTargetData()->channelGUID);
@@ -3906,7 +3904,6 @@ void AuraEffect::HandleChannelDeathItem(AuraApplication const* aurApp, uint8 mod
         return;
 
     Unit* caster = GetCaster();
-    Player* plCaster = caster->ToPlayer();
     Unit* victim = aurApp->GetTarget();
     if (!caster || caster->GetTypeId() != TYPEID_PLAYER || !victim)
         return;
@@ -3923,6 +3920,7 @@ void AuraEffect::HandleChannelDeathItem(AuraApplication const* aurApp, uint8 mod
     Creature *cr = victim->ToCreature();
 
     // Soul Shard only from non-grey units
+    Player* plCaster = caster->ToPlayer();
     if (spellInfo->Effects[m_effIndex].ItemType == 6265 && plCaster)
     {
         if (!plCaster->IsHonorOrXPTarget(victim) ||
@@ -4629,7 +4627,7 @@ void AuraEffect::HandleAuraModTotalThreat(AuraApplication const* aurApp, uint8 m
         return;
 
     Unit* caster = GetCaster();
-    if (caster || caster->IsAlive())
+    if (caster && caster->IsAlive())
         caster->GetThreatManager().UpdateMyTempModifiers();
 }
 
@@ -4684,33 +4682,35 @@ void AuraEffect::HandleAuraModIncreaseFlightSpeed(AuraApplication const* aurApp,
     if (!(mode & AURA_EFFECT_HANDLE_CHANGE_AMOUNT_SEND_FOR_CLIENT_MASK))
         return;
 
+    Unit* target = aurApp->GetTarget();
+    if (mode & AURA_EFFECT_HANDLE_CHANGE_AMOUNT_MASK)
+        target->UpdateSpeed(MOVE_FLIGHT);
+
     Unit* m_target = aurApp->GetTarget();
     // Enable Fly mode for flying mounts
     if (GetAuraType() == SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED)
     {
-        WorldPacket data;
-        if (apply)
+        // do not remove unit flag if there are more than this auraEffect of that kind on unit on unit
+        if (mode & AURA_EFFECT_HANDLE_SEND_FOR_CLIENT_MASK && (apply || (!target->HasAuraType(SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED) && !target->HasAuraType(SPELL_AURA_FLY))))
         {
-            ((Player*)m_target)->SetFlying(true);
-            data.Initialize(SMSG_MOVE_SET_CAN_FLY, 12);
-        }
-        else
-        {
-            data.Initialize(SMSG_MOVE_UNSET_CAN_FLY, 12);
-            ((Player*)m_target)->SetFlying(false);
+            bool previousState = target->HasCanFly();
+            target->SetFlying(apply);
+            if (previousState != apply)
+                if (!apply && !target->IsLevitating())
+                    target->GetMotionMaster()->MoveFall();
         }
 
-        data << m_target->GetPackGUID();
-        data << uint32(0);                                      // unknown
-        m_target->SendMessageToSet(&data, true);
+        //! Someone should clean up these hacks and remove it from this function. It doesn't even belong here.
+        if (mode & AURA_EFFECT_HANDLE_REAL)
+        {
+            //Players on flying mounts must be immune to polymorph
+            if (m_target->GetTypeId() == TYPEID_PLAYER)
+                m_target->ApplySpellImmune(GetId(), IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, apply);
 
-        //Players on flying mounts must be immune to polymorph
-        if (m_target->GetTypeId() == TYPEID_PLAYER)
-            m_target->ApplySpellImmune(GetId(), IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, apply);
-
-        // Dragonmaw Illusion (overwrite mount model, mounted aura already applied)
-        if (apply && m_target->HasAura(42016) && m_target->GetMountID())
-            m_target->SetUInt32Value(UNIT_FIELD_MOUNTDISPLAYID, 16314);
+            // Dragonmaw Illusion (overwrite mount model, mounted aura already applied)
+            if (apply && m_target->HasAura(42016) && m_target->GetMountID())
+                m_target->SetUInt32Value(UNIT_FIELD_MOUNTDISPLAYID, 16314);
+        }
     }
 
     m_target->UpdateSpeed(MOVE_FLIGHT);
@@ -5981,6 +5981,8 @@ void AuraEffect::HandleAuraGhost(AuraApplication const* aurApp, uint8 mode, bool
         m_target->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
         m_target->m_serverSideVisibility.SetValue(SERVERSIDE_VISIBILITY_GHOST, GHOST_VISIBILITY_GHOST);
         m_target->m_serverSideVisibilityDetect.SetValue(SERVERSIDE_VISIBILITY_GHOST, GHOST_VISIBILITY_GHOST);
+        m_target->SetWaterWalking(true);
+        m_target->SetRooted(false);
     }
     else
     {
@@ -5990,6 +5992,7 @@ void AuraEffect::HandleAuraGhost(AuraApplication const* aurApp, uint8 mode, bool
         m_target->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
         m_target->m_serverSideVisibility.SetValue(SERVERSIDE_VISIBILITY_GHOST, GHOST_VISIBILITY_ALIVE);
         m_target->m_serverSideVisibilityDetect.SetValue(SERVERSIDE_VISIBILITY_GHOST, GHOST_VISIBILITY_ALIVE);
+        m_target->SetWaterWalking(false);
     }
 }
 
@@ -6006,7 +6009,9 @@ void AuraEffect::HandleAuraAllowFlight(AuraApplication const* aurApp, uint8 mode
             return;
     }
 
-    if (target->SetFlying(apply))
+    bool previousState = target->HasCanFly();
+    target->SetFlying(apply);
+    if (previousState != apply)
     {
         if (!apply && !target->IsLevitating())
             target->GetMotionMaster()->MoveFall();

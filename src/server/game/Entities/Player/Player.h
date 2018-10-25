@@ -436,14 +436,6 @@ struct LookingForGroup
     std::string comment;
 };
 
-enum PlayerMovementType
-{
-    MOVE_ROOT       = 1,
-    MOVE_UNROOT     = 2,
-    MOVE_WATER_WALK = 3,
-    MOVE_LAND_WALK  = 4
-};
-
 enum DrunkenState
 {
     DRUNKEN_SOBER   = 0,
@@ -1314,7 +1306,7 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
             if(!pItem)
                 return EQUIP_ERR_ITEM_NOT_FOUND;
             uint32 count = pItem->GetCount();
-            return _CanStoreItem( bag, slot, dest, pItem->GetEntry(), count, pItem, swap, nullptr, pItem ? pItem->GetTemplate() : nullptr );
+            return _CanStoreItem( bag, slot, dest, pItem->GetEntry(), count, pItem, swap, nullptr, pItem->GetTemplate());
 
         }
         InventoryResult CanStoreItems( std::vector<Item*> const& items, uint32 count, uint32* itemLimitCategory) const;
@@ -1354,7 +1346,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         {
             return StoreItem( dest, pItem, update);
         }
-        Item* BankItem(uint16 pos, Item *pItem, bool update);
         void RemoveItem(uint8 bag, uint8 slot, bool update);
         void MoveItemFromInventory(uint8 bag, uint8 slot, bool update);
         // in trade, auction, guild bank, mail....
@@ -1559,7 +1550,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         virtual void SaveDataFieldToDB();
         static bool SaveValuesArrayInDB(Tokens const& data,ObjectGuid guid);
         static void SetUInt32ValueInArray(Tokens& data,uint16 index, uint32 value);
-        static void SetFloatValueInArray(Tokens& data,uint16 index, float value);
         static void SetUInt32ValueInDB(uint16 index, uint32 value, ObjectGuid guid);
         static void SetFloatValueInDB(uint16 index, float value, ObjectGuid guid);
         static void SavePositionInDB(uint32 mapid, float x,float y,float z,float o,uint32 zone,ObjectGuid guid);
@@ -1616,7 +1606,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         void AddNewMailDeliverTime(time_t deliver_time);
         bool IsMailsLoaded() const { return m_mailsLoaded; }
 
-        //void SetMail(Mail *m);
         void RemoveMail(uint32 id);
 
         void AddMail(Mail* mail) { m_mail.push_front(mail);}
@@ -1775,8 +1764,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         void SetDelayedTeleportFlag(bool setting) { m_bHasDelayedTeleport = setting; }
         void ScheduleDelayedOperation(uint32 operation) { if (operation < DELAYED_END) m_DelayedOperations |= operation; }
 
-        bool IsInstanceLoginGameMasterException() const;
-
         void UpdateAfkReport(time_t currTime);
         void UpdatePvPFlag(time_t currTime);
         void SetContestedPvP(Player* attackedPlayer = nullptr);
@@ -1836,8 +1823,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
 
         uint32 GetBaseDefenseSkillValue() const { return GetBaseSkillValue(SKILL_DEFENSE); }
         uint32 GetBaseWeaponSkillValue(WeaponAttackType attType) const;
-
-        uint32 GetSpellByProto(ItemTemplate *proto) const;
 
         float GetHealthBonusFromStamina() const;
         float GetManaBonusFromIntellect() const;
@@ -1929,8 +1914,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
 		void SendMessageToSetInRange(WorldPacket const* data, float dist, bool self, bool includeMargin, bool own_team_only, Player const* skipped_rcvr = nullptr);
         void SendMessageToSet(WorldPacket const* data, Player* skipped_rcvr) override;
 
-        void SendTeleportAckPacket();
-
         /**
         * Deletes a character from the database
         *
@@ -1958,6 +1941,8 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         void ResurrectPlayer(float restore_percent, bool applySickness = false);
         void BuildPlayerRepop();
         void RepopAtGraveyard();
+        void SetIsRepopPending(bool pending) { m_isRepopPending = pending; }
+        bool IsRepopPending() const { return m_isRepopPending; }
 
         void DurabilityLossAll(double percent, bool inventory);
         void DurabilityLoss(Item* item, double percent);
@@ -1974,8 +1959,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
             StopMirrorTimer(BREATH_TIMER);
             StopMirrorTimer(FIRE_TIMER);
         }
-
-        void SetMovement(PlayerMovementType pType);
 
         void JoinedChannel(Channel *c);
         void LeftChannel(Channel *c);
@@ -2050,7 +2033,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         static DrunkenState GetDrunkenstateByValue(uint8 value);
 
         uint32 GetDeathTimer() const { return m_deathTimer; }
-        uint32 GetDeathTime() const { return m_deathTime; }
         uint32 GetCorpseReclaimDelay(bool pvp) const;
         void UpdateCorpseReclaimDelay();
 		int32 CalculateCorpseReclaimDelay(bool load = false) const;
@@ -2176,7 +2158,8 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         /***              ENVIROMENTAL SYSTEM                  ***/
         /*********************************************************/
 
-        void EnvironmentalDamage(EnviromentalDamage type, uint32 damage);
+        bool IsImmuneToEnvironmentalDamage() const;
+        uint32 EnvironmentalDamage(EnviromentalDamage type, uint32 damage);
 
         /*********************************************************/
         /***               FLOOD FILTER SYSTEM                 ***/
@@ -2184,15 +2167,12 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
 
         void UpdateSpeakTime();
         bool CanSpeak() const;
-        void ChangeSpeakTime(int utime);
 
         /*********************************************************/
         /***                 VARIOUS SYSTEMS                   ***/
         /*********************************************************/
         
         void UpdateFallInformationIfNeed(MovementInfo const& minfo, uint16 opcode);
-		// only changed for direct client control (possess, vehicle etc.), not stuff you control using pet commands
-		Unit* m_unitMovedByMe;
         WorldObject* m_seer;
         void SetFallInformation(uint32 time, float z);
         void HandleFall(MovementInfo const& movementInfo);
@@ -2200,19 +2180,13 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         //only for TC compat
         bool CanFlyInZone(uint32 mapid, uint32 zone, SpellInfo const* bySpell) const { return true; }
 
-        bool SetDisableGravity(bool disable, bool packetOnly /* = false */) override;
-        bool SetFlying(bool apply, bool packetOnly = false) override;
-        bool SetWaterWalking(bool apply, bool packetOnly = false) override;
-        bool SetFeatherFall(bool apply, bool packetOnly = false) override;
-        bool SetHover(bool enable, bool packetOnly = false) override;
+        void SetFlying(bool apply) override;
 
         bool CanFly() const override { return m_movementInfo.HasMovementFlag(MOVEMENTFLAG_CAN_FLY); }
         bool CanWalk() const override { return true; }
         bool CanSwim() const override { return true; }
 
         void HandleDrowning(uint32 time_diff);
-        void HandleFallDamage(MovementInfo& movementInfo);
-        void HandleFallUnderMap();
 
         //relocate without teleporting
         void RelocateToArenaZone(bool secondary = false);
@@ -2223,11 +2197,7 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         void GetArenaZoneCoord(bool secondary, uint32& map, float& x, float& y, float& z, float& o);
         void GetBetaZoneCoord(uint32& map, float& x, float& y, float& z, float& o);
         
-        void SetClientControl(Unit* target, uint8 allowMove);
-
-        //Set target as moved by this player
-        void SetMovedUnit(Unit* target);
-
+    public:
 		void SetSeer(WorldObject* target) { m_seer = target; }
 		void SetViewpoint(WorldObject* target, bool apply);
 		WorldObject* GetViewpoint() const;
@@ -2518,6 +2488,9 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         bool m_bCanDelayTeleport;
         bool m_bHasDelayedTeleport;
 
+        // Used to resurect a dead player into a ghost by 2 non consecutive steps
+        bool m_isRepopPending;
+
         /*********************************************************/
         /***                  HONOR SYSTEM                     ***/
         /*********************************************************/
@@ -2559,11 +2532,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         PlayerTalentMap* m_talents[MAX_TALENT_SPECS];
 #endif
 
-        uint32 m_timeSyncCounter;
-        uint32 m_timeSyncTimer;
-        uint32 m_timeSyncClient;
-        uint32 m_timeSyncServer;
-
         ActionButtonList m_actionButtons;
 
         float m_auraBaseFlatMod[BASEMOD_END];
@@ -2572,9 +2540,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         SpellModContainer m_spellMods[MAX_SPELLMOD];
         EnchantDurationList m_enchantDuration;
         ItemDurationList m_itemDuration;
-
-        void ResetTimeSync();
-        void SendTimeSync();
 
         ObjectGuid m_resurrectGUID;
         uint32 m_resurrectMap;
@@ -2602,9 +2567,8 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         uint32 m_zoneUpdateTimer;
         uint32 m_areaUpdateId;
 
-        uint32 m_deathTimer; //time left before forced releasing
-        time_t m_deathExpireTime; //added delay expiration time
-        time_t m_deathTime; //time of death
+        uint32 m_deathTimer; // time left before forced releasing
+        time_t m_deathExpireTime; // added delay expiration time
 
         uint32 m_restTime;
 
@@ -2686,7 +2650,7 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         bool m_hasMovedInUpdate;
 
         //sun: keep EquipItem in private, they're really use to missuse
-        Item* EquipItem(uint16 pos, Item *pItem, bool update);
+        Item* EquipItem(uint16 pos, Item *pItem, bool update, bool interruptSpells = true);
 
     private:
         // internal common parts for CanStore/StoreItem functions

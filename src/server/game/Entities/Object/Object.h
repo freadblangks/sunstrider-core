@@ -49,9 +49,7 @@ float const DEFAULT_COLLISION_HEIGHT = 2.03128f; // Most common value in dbc
 struct MovementInfo
 {
     // common
-#ifdef LICH_KING
     ObjectGuid guid;
-#endif
     uint32 flags;
 #ifdef LICH_KING
     uint16 flags2;
@@ -115,12 +113,17 @@ struct MovementInfo
     bool HasMovementFlag(uint32 flag) const { return flags & flag; }
 
     uint16 GetExtraMovementFlags() const { return flags2; }
-    bool HasExtraMovementFlag(uint16 flag) const { return flags2 & flag; }
-#ifdef LICH_KING
+    void SetExtraMovementFlags(uint16 flag) { flags2 = flag; }
     void AddExtraMovementFlag(uint16 flag) { flags2 |= flag; }
-#endif
+    void RemoveExtraMovementFlag(uint16 flag) { flags2 &= ~flag; }
+    bool HasExtraMovementFlag(uint16 flag) const { return flags2 & flag; }
 
     void SetFallTime(uint32 _time) { fallTime = _time; }
+
+    void OutDebug() const;
+
+    void WriteContentIntoPacket(ByteBuffer* data, bool includeGuid = false) const;
+    void FillContentFromPacket(ByteBuffer* data, bool includeGuid = false);
 };
 
 #define POSITION_GET_X_Y_Z(a)   (a)->GetPositionX(), (a)->GetPositionY(), (a)->GetPositionZ()
@@ -408,8 +411,7 @@ class TC_GAME_API WorldObject : public Object, public WorldLocation
 
         void GetNearPoint2D(WorldObject const* searcher, float &x, float &y, float distance, float absAngle) const;
         void GetNearPoint(WorldObject const* searcher, float &x, float &y, float &z, float distance2d, float absAngle) const;
-        void GetClosePoint(float &x, float &y, float &z, float distance2d = 0, float relAngle = 0) const;
-        void GetChasePoint(float &x, float &y, float &z, float distance2d = 0, float relAngle = 0) const;
+        void GetClosePoint(float &x, float &y, float &z, float size, float distance2d = 0, float relAngle = 0) const;
         void MovePosition(Position &pos, float dist, float angle);
         void GetGroundPoint(float &x, float &y, float &z, float dist, float angle);
         void GetGroundPointAroundUnit(float &x, float &y, float &z, float dist, float angle)
@@ -516,7 +518,6 @@ class TC_GAME_API WorldObject : public Object, public WorldLocation
         virtual void SendMessageToSet(WorldPacket const* data, bool self);
         virtual void SendMessageToSetInRange(WorldPacket const* data, float dist, bool self, bool includeMargin = false, Player const* skipped_rcvr = nullptr);
         virtual void SendMessageToSet(WorldPacket const* data, Player* skipped_rcvr);
-        void BuildHeartBeatMsg(WorldPacket* data) const;
 
 		virtual uint8 GetLevelForTarget(WorldObject const* /*target*/) const { return 1; }
 
@@ -643,9 +644,20 @@ class TC_GAME_API WorldObject : public Object, public WorldLocation
 		virtual void UpdateObjectVisibility(bool forced = true);
         virtual void UpdateObjectVisibilityOnCreate() { UpdateObjectVisibility(true); }
         
-        MovementInfo m_movementInfo;
-        
         uint32  LastUsedScriptID;
+
+        void SetFallTime(uint32 time) { m_movementInfo.SetFallTime(time); }
+        void AddUnitMovementFlag(uint32 f) { m_movementInfo.flags |= f; }
+        void RemoveUnitMovementFlag(uint32 f) { m_movementInfo.flags &= ~f; }
+        bool HasUnitMovementFlag(uint32 f) const { return (m_movementInfo.flags & f) == f; }
+        uint32 GetUnitMovementFlags() const { return m_movementInfo.flags; }
+        void SetUnitMovementFlags(uint32 f) { m_movementInfo.flags = f; }
+
+        void AddExtraUnitMovementFlag(uint16 f) { m_movementInfo.flags2 |= f; }
+        void RemoveExtraUnitMovementFlag(uint16 f) { m_movementInfo.flags2 &= ~f; }
+        bool HasExtraUnitMovementFlag(uint16 f) const { return (m_movementInfo.flags2 & f) == f; }
+        uint16 GetExtraUnitMovementFlags() const { return m_movementInfo.flags2; }
+        void SetExtraUnitMovementFlags(uint16 f) { m_movementInfo.flags2 = f; }
 
         // Transports
         Transport* GetTransport() const { return m_transport; }
@@ -654,8 +666,14 @@ class TC_GAME_API WorldObject : public Object, public WorldLocation
         float GetTransOffsetZ() const { return m_movementInfo.transport.pos.GetPositionZ(); }
         float GetTransOffsetO() const { return m_movementInfo.transport.pos.GetOrientation(); }
         uint32 GetTransTime()   const { return m_movementInfo.transport.time; }
-        virtual ObjectGuid GetTransGUID() const;
-        void SetTransport(Transport* t) { m_transport = t; }
+        virtual ObjectGuid GetTransGUID() const; 
+        void SetTransport(Transport* t);
+        void SetTransOffset(float x, float y, float z, float o = 0.0f) { m_movementInfo.transport.pos.Relocate(x, y, z, o); }
+        void SetTransTime(uint32 time) { m_movementInfo.transport.time = time; }
+#ifdef LICH_KING
+        void SetTransSeat(int8 seat) { m_movementInfo.transport.seat = seat; }
+#endif
+        void SetTransGUID(ObjectGuid guid) { m_movementInfo.transport.guid = guid; }
 
         virtual float GetStationaryX() const { return GetPositionX(); }
         virtual float GetStationaryY() const { return GetPositionY(); }
@@ -664,6 +682,11 @@ class TC_GAME_API WorldObject : public Object, public WorldLocation
 
         void UpdatePositionData(bool updateCreatureLiquid = false);
         float GetFloorZ() const;
+
+        // Return the current positional/physical state of the object
+        MovementInfo GetMovementInfo() const;
+        MovementInfo const& _GetMovementInfo() const;
+        virtual float ComputeCollisionHeight() const { return 0.0f; }
         virtual float GetCollisionHeight() const { return 0.0f; }
         float GetMapWaterOrGroundLevel(float x, float y, float z, float* ground = nullptr) const;
         float GetMapHeight(float x, float y, float z, bool vmap = true, float distanceToSearch = 50.0f) const; // DEFAULT_HEIGHT_SEARCH in map.h
@@ -689,6 +712,9 @@ class TC_GAME_API WorldObject : public Object, public WorldLocation
         std::string m_name;
 		bool const m_isWorldObject;
 		ZoneScript* m_zoneScript;
+
+        MovementInfo m_movementInfo;
+
         bool m_isActive;
         bool m_isFarVisible;
 

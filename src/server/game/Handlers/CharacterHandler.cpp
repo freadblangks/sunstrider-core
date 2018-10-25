@@ -83,7 +83,10 @@ Player* PlayerbotHolder::AddPlayerBot(ObjectGuid playerGuid, uint32 masterAccoun
 
     bot = botSession->GetPlayer();
     if (!bot)
+    {
+        delete botSession;
         return nullptr;
+    }
 
     PlayerbotMgr *mgr = bot->GetPlayerbotMgr();
     bot->SetPlayerbotMgr(nullptr);
@@ -463,9 +466,7 @@ void WorldSession::HandleCharCreateOpcode(WorldPacket & recvData)
 
                     field = result->Fetch();
                     accRace = field[1].GetUInt8();
-
-                    if (!haveSameRace)
-                        haveSameRace = createInfo->Race == accRace;
+                    haveSameRace = createInfo->Race == accRace;
                 }
             }
 
@@ -835,10 +836,6 @@ void WorldSession::_HandlePlayerLogin(Player* pCurrChar, LoginQueryHolder* holde
     // Place character in world (and load zone) before some object loading
     pCurrChar->LoadCorpse(holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_CORPSE_LOCATION));
 
-    // setting Ghost+speed if dead
-    if (pCurrChar->m_deathState == DEAD)
-        pCurrChar->SetMovement(MOVE_WATER_WALK);
-
     pCurrChar->ContinueTaxiFlight();
 
     // Load pet if any and player is alive and not in taxi flight
@@ -987,8 +984,7 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
 {
     ObjectGuid playerGuid = holder->GetGuid();
 
-    Player* pCurrChar = nullptr;
-    pCurrChar = new Player(this);
+    Player* pCurrChar = new Player(this);
 
     // "GetAccountId()==db stored account id" checked in LoadFromDB (prevent login not own character using cheating tools)
     if (!pCurrChar->LoadFromDB(playerGuid.GetCounter(), holder))

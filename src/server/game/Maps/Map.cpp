@@ -436,22 +436,19 @@ void Map::EnsureGridCreated_i(const GridCoord &p)
 {
     if (!getNGrid(p.x_coord, p.y_coord))
     {
-        if (!getNGrid(p.x_coord, p.y_coord))
-        {
-            setNGrid(new NGridType(p.x_coord*MAX_NUMBER_OF_GRIDS + p.y_coord, p.x_coord, p.y_coord, i_gridExpiry),
-                p.x_coord, p.y_coord);
+        setNGrid(new NGridType(p.x_coord*MAX_NUMBER_OF_GRIDS + p.y_coord, p.x_coord, p.y_coord, i_gridExpiry),
+            p.x_coord, p.y_coord);
 
-            // build a linkage between this map and NGridType
-            buildNGridLinkage(getNGrid(p.x_coord, p.y_coord));
-            getNGrid(p.x_coord, p.y_coord)->SetGridState(GRID_STATE_IDLE);
+        // build a linkage between this map and NGridType
+        buildNGridLinkage(getNGrid(p.x_coord, p.y_coord));
+        getNGrid(p.x_coord, p.y_coord)->SetGridState(GRID_STATE_IDLE);
 
-            //z coord
-            int gx = (MAX_NUMBER_OF_GRIDS - 1) - p.x_coord;
-            int gy = (MAX_NUMBER_OF_GRIDS - 1) - p.y_coord;
+        //z coord
+        int gx = (MAX_NUMBER_OF_GRIDS - 1) - p.x_coord;
+        int gy = (MAX_NUMBER_OF_GRIDS - 1) - p.y_coord;
 
-            if (!GridMaps[gx][gy])
-                Map::LoadMapAndVMap(gx, gy);
-        }
+        if (!GridMaps[gx][gy])
+            Map::LoadMapAndVMap(gx, gy);
     }
 }
 
@@ -574,6 +571,8 @@ bool Map::AddToMap(T* obj, bool checkTransport)
 {
     static_assert(!std::is_same<Player, T>::value, "Players must use AddPlayerToMap function");
 
+    assert(obj);
+
     /// @todo Needs clean up. An object should not be added to map twice.
     if (obj->IsInWorld())
     {
@@ -584,8 +583,6 @@ bool Map::AddToMap(T* obj, bool checkTransport)
     }
 
     CellCoord p = Trinity::ComputeCellCoord(obj->GetPositionX(), obj->GetPositionY());
-
-    assert(obj);
 
     if (!p.IsCoordValid())
     {
@@ -958,7 +955,7 @@ void Map::Update(const uint32& t_diff)
     sScriptMgr->OnMapUpdate(this, t_diff);
 }
 
-void Map::RemovePlayerFromMap(Player *player, bool remove)
+void Map::RemovePlayerFromMap(Player* player, bool remove)
 {
     // Before leaving map, update zone/area for stats
     player->UpdateZone(MAP_INVALID_ZONE, 0);
@@ -2317,7 +2314,7 @@ const char* Map::GetMapName() const
     return i_mapEntry ? i_mapEntry->name[sWorld->GetDefaultDbcLocale()] : "UNNAMEDMAP\x0";
 }
 
-void Map::SendInitSelf( Player * player)
+void Map::SendInitSelf(Player * player)
 {
     TC_LOG_DEBUG("maps","Creating player data for himself %u", player->GetGUID().GetCounter());
 
@@ -3114,6 +3111,8 @@ void InstanceMap::CreateInstanceData(bool load)
             {
                 TC_LOG_DEBUG("maps", "Loading instance data for `%s` with id %u", sObjectMgr->GetScriptName(i_script_id).c_str(), i_InstanceId);
                 i_data->Load(data);
+                if (!i_data->HasAnyBossState()) //old instance scripts are directly overriding the Load function, but won't do the correct call to update UpdateSpawnGroups
+                    i_data->UpdateSpawnGroups();
             }
         }
     }
@@ -3439,7 +3438,7 @@ bool Map::IsHeroic() const
 /* ******* Battleground Instance Maps ******* */
 
 BattlegroundMap::BattlegroundMap(uint32 id, time_t expiry, uint32 InstanceId, Map* parent)
-  : Map(MAP_TYPE_BATTLEGROUND_MAP, id, expiry, InstanceId, REGULAR_DIFFICULTY, parent)
+  : Map(MAP_TYPE_BATTLEGROUND_MAP, id, expiry, InstanceId, REGULAR_DIFFICULTY, parent), m_bg(nullptr)
 {
     //lets initialize visibility distance for BG/Arenas
     BattlegroundMap::InitVisibilityDistance();
@@ -3450,8 +3449,8 @@ BattlegroundMap::~BattlegroundMap()
     if (m_bg)
     {
         //unlink to prevent crash, always unlink all pointer reference before destruction
-        m_bg->SetBgMap(NULL);
-        m_bg = NULL;
+        m_bg->SetBgMap(nullptr);
+        m_bg = nullptr;
     }
 }
 

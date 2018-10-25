@@ -1026,10 +1026,10 @@ void Spell::EffectDummy(uint32 i)
                     if (!unitTarget || unitTarget->GetTypeId() != TYPEID_UNIT || (unitTarget->ToCreature())->IsPet()) return;
 
                     Creature* creatureTarget = unitTarget->ToCreature();
-                    auto  pGameObj = new GameObject;
+                    if (!creatureTarget)
+                        return;
 
-                    if (!creatureTarget || !pGameObj) return;
-
+                    GameObject* pGameObj = new GameObject;
                     if (!pGameObj->Create(creatureTarget->GetMap()->GenerateLowGuid<HighGuid::GameObject>(), 181574, creatureTarget->GetMap(), unitTarget->GetPhaseMask(),
                         creatureTarget->GetPosition(), G3D::Quat(), 255, GO_STATE_READY))
                     {
@@ -1855,7 +1855,7 @@ void Spell::EffectDummy(uint32 i)
                 // Berserking (troll racial traits)
                 case 1661:
                 {
-                    if (!_unitCaster || !_unitCaster)
+                    if (!_unitCaster)
                         break;
                     uint32 healthPerc = uint32((float(_unitCaster->GetHealth())/ _unitCaster->GetMaxHealth())*100);
                     int32 melee_mod = 10;
@@ -2465,7 +2465,7 @@ void Spell::EffectTriggerSpell(uint32 effIndex)
             // Vanish
             case 18461:
             {
-                if (!_unitCaster || !_unitCaster)
+                if (!_unitCaster)
                     break;
 
                 _unitCaster->RemoveAurasByType(SPELL_AURA_MOD_ROOT);
@@ -3343,7 +3343,7 @@ void Spell::DoCreateItem(uint32 i, uint32 itemtype)
     // the maximum number of created additional items
     uint8 additionalMaxNum=0;
     // get the chance and maximum number for creating extra items
-    if ( canCreateExtraItems(player, m_spellInfo->Id, additionalCreateChance, additionalMaxNum) )
+    if (CanCreateExtraItems(player, m_spellInfo->Id, additionalCreateChance, additionalMaxNum))
     {
         // roll with this chance till we roll not to create or we create the max num
         while ( roll_chance_f(additionalCreateChance) && items_count<=additionalMaxNum )
@@ -3935,7 +3935,7 @@ void Spell::EffectSummonChangeItem(uint32 i)
             m_castItemGUID.Clear();
             m_castItemEntry = 0;
 
-            player->EquipItem(dest, pNewItem, true);
+            player->EquipItem(dest, pNewItem, true, false);
             player->AutoUnequipOffhandIfNeed();
             player->SendNewItem(pNewItem, 1, true, false);
             player->ItemAddedQuestCheck(newitemid, 1);
@@ -4239,7 +4239,7 @@ void Spell::EffectTeleUnitsFaceCaster(uint32 i)
     float dis = m_spellInfo->Effects[i].CalcRadius(m_originalCaster->GetSpellModOwner(), this);
 
     float fx,fy,fz;
-    m_caster->GetClosePoint(fx,fy,fz,unitTarget->GetCombatReach(),dis);
+    m_caster->GetClosePoint(fx, fy, fz, unitTarget->GetCombatReach(), dis);
 
     if(unitTarget->GetTypeId() == TYPEID_PLAYER)
         (unitTarget->ToPlayer())->TeleportTo(mapid, fx, fy, fz, -m_caster->GetOrientation(), TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET | (unitTarget==m_caster ? TELE_TO_SPELL : 0));
@@ -5563,26 +5563,23 @@ void Spell::EffectScriptEffect(uint32 effIndex)
                 if(!unitTarget)
                     return;
 
-                if(unitTarget)
+                switch((unitTarget->ToPlayer())->GetBaseSkillValue(762))
                 {
-                    switch((unitTarget->ToPlayer())->GetBaseSkillValue(762))
-                    {
-                    case 75: unitTarget->CastSpell(unitTarget, 51621, true); break;;
-                    case 150: unitTarget->CastSpell(unitTarget, 48024, true); break;
-                    case 225: 
-                        if (GetVirtualMapForMapAndZone(m_caster->GetMapId(),m_caster->GetAreaId()) == 530)
-                            unitTarget->CastSpell(unitTarget, 51617, true);
-                        else
-                            unitTarget->CastSpell(unitTarget, 48024, true);
-                        break;
-                    case 300: 
-                        if (GetVirtualMapForMapAndZone(m_caster->GetMapId(),m_caster->GetAreaId()) == 530)
-                            unitTarget->CastSpell(unitTarget, 48023, true);
-                        else
-                            unitTarget->CastSpell(unitTarget, 48024, true);
-                        break;
-                    default: break;
-                    }
+                case 75: unitTarget->CastSpell(unitTarget, 51621, true); break;;
+                case 150: unitTarget->CastSpell(unitTarget, 48024, true); break;
+                case 225: 
+                    if (GetVirtualMapForMapAndZone(m_caster->GetMapId(),m_caster->GetAreaId()) == 530)
+                        unitTarget->CastSpell(unitTarget, 51617, true);
+                    else
+                        unitTarget->CastSpell(unitTarget, 48024, true);
+                    break;
+                case 300: 
+                    if (GetVirtualMapForMapAndZone(m_caster->GetMapId(),m_caster->GetAreaId()) == 530)
+                        unitTarget->CastSpell(unitTarget, 48023, true);
+                    else
+                        unitTarget->CastSpell(unitTarget, 48024, true);
+                    break;
+                default: break;
                 }
                 break;
         }
@@ -5591,14 +5588,11 @@ void Spell::EffectScriptEffect(uint32 effIndex)
             if(!unitTarget)
                 return;
 
-            if(unitTarget)
+            switch((unitTarget->ToPlayer())->GetBaseSkillValue(762))
             {
-                switch((unitTarget->ToPlayer())->GetBaseSkillValue(762))
-                {
-                case 75: unitTarget->CastSpell(unitTarget, 42680, true); break;;
-                case 150: case 225: case 300: unitTarget->CastSpell(unitTarget, 42683, true); break;
-                default: break;
-                }
+            case 75: unitTarget->CastSpell(unitTarget, 42680, true); break;;
+            case 150: case 225: case 300: unitTarget->CastSpell(unitTarget, 42683, true); break;
+            default: break;
             }
             break;
         }
@@ -5829,7 +5823,7 @@ void Spell::EffectScriptEffect(uint32 effIndex)
         //5,000 Gold
         case 46642:
         {
-            if(unitTarget && unitTarget->GetTypeId() == TYPEID_PLAYER)
+            if(unitTarget->GetTypeId() == TYPEID_PLAYER)
                 (unitTarget->ToPlayer())->ModifyMoney(50000000);
             break;
         }
@@ -5946,7 +5940,8 @@ void Spell::EffectAddComboPoints(uint32 /*i*/)
     if (!player)
         return;
 
-    if (!player->m_playerMovingMe)
+    WorldSession* session = player->m_playerMovingMe;
+    if (!session)
         return;
 
     if (damage <= 0)
@@ -5955,11 +5950,11 @@ void Spell::EffectAddComboPoints(uint32 /*i*/)
     //HACK
     if (m_spellInfo->Id == 15250) 
     {
-        player->m_playerMovingMe->AddComboPoints(unitTarget, damage, true);
+        session->GetPlayer()->AddComboPoints(unitTarget, damage, true);
         return;
     }
 
-    player->m_playerMovingMe->AddComboPoints(unitTarget, damage, false);
+    session->GetPlayer()->AddComboPoints(unitTarget, damage, false);
 }
 
 void Spell::EffectDuel(uint32 i)
@@ -6774,9 +6769,8 @@ void Spell::EffectKnockBack(uint32 i)
     if (unitTarget->IsNonMeleeSpellCast(true))
         unitTarget->InterruptNonMeleeSpells(true);
 
-    float ratio = 0.1f;
-    float speedxy = float(m_spellInfo->Effects[i].MiscValue) * ratio;
-    float speedz = float(damage) * ratio;
+    float speedxy = float(m_spellInfo->Effects[i].MiscValue) / 10.0f;
+    float speedz = float(damage) / 10.0f;
     if (speedxy < 0.1f && speedz < 0.1f)
         return;
 
@@ -6788,7 +6782,7 @@ void Spell::EffectKnockBack(uint32 i)
             destTarget->GetPosition(x, y);
         }
         else
-            return;
+            return; // log into warn a message for this case?
     }
     else //if (m_spellInfo->Effects[i].Effect == SPELL_EFFECT_KNOCK_BACK)
     {
@@ -6964,7 +6958,7 @@ void Spell::EffectDestroyAllTotems(uint32 /*i*/)
     int32 mana = 0;
     for (uint8 slot = SUMMON_SLOT_TOTEM; slot < MAX_TOTEM_SLOT; ++slot)
     {
-        if(!slot)
+        if (!_unitCaster->m_SummonSlot[slot])
             continue;
 
         Creature* totem = _unitCaster->GetMap()->GetCreature(_unitCaster->m_SummonSlot[slot]);

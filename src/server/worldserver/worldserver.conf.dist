@@ -42,10 +42,10 @@ LogsDir = ""
 #        Default: hostname;port;username;password;database
 #
 
-LoginDatabaseInfo     = "127.0.0.1;3306;usr;pw;_auth"
-WorldDatabaseInfo     = "127.0.0.1;3306;usr;pw;_world"
-CharacterDatabaseInfo = "127.0.0.1;3306;usr;pw;_chars"
-LogsDatabaseInfo      = "127.0.0.1;3306;usr;pw;_logs"
+LoginDatabaseInfo     = "127.0.0.1;3306;trinity;trinity;auth"
+WorldDatabaseInfo     = "127.0.0.1;3306;trinity;trinity;world"
+CharacterDatabaseInfo = "127.0.0.1;3306;trinity;trinity;characters"
+LogsDatabaseInfo      = "127.0.0.1;3306;trinity;trinity;logs"
 
 #
 #    MaxPingTime
@@ -401,6 +401,17 @@ Anticheat.Movement.Warn = true
 #
 
 Anticheat.Movement.Warn.Cooldown = 120
+
+#
+#    Anticheat.Movement.PendingMoveChangesTimeoutTime
+#        Description: Time each client has to acknowledge a movement change until they are kicked.
+#        Note:        A lower time will give cheaters less advantage when using a very specific
+#                     type of hack. However, the cost is that innocent but laggy players might
+#                     sometimes get kicked.
+#        Default:     5000 (5 seconds)
+#
+
+Anticheat.Movement.PendingMoveChangesTimeoutTime = 5000
 
 #
 ###################################################################################################################
@@ -1996,6 +2007,15 @@ PvPToken.ZoneID = 0
 NoResetTalentsCost = 0
 
 #
+#     Guild.AllowMultipleGuildMaster
+#        Description: Allow more than one guild master. Additional Guild Masters must be set using
+#                     the ".guild rank" command.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+Guild.AllowMultipleGuildMaster = 0
+
+#
 #   ForbiddenMaps
 #       map ids that users below SEC_GAMEMASTER cannot enter, with delimiter ','
 #       Default: ""
@@ -2429,6 +2449,7 @@ Logger.maps.script=3,Console Server
 Logger.maps=3,Console Server
 Logger.mapcrash=1,Console Server Mapcrash
 Logger.misc=3,Console Server
+Logger.movement=3,Console Server
 #Logger.movement.flightpath=3,Console Server
 #Logger.movement.motionmaster=3,Console Server
 Logger.network=3,Console Server

@@ -166,7 +166,7 @@ void FlightPathMovementGenerator::LoadPath(Player* owner)
     {
         uint32 path, cost;
         sObjectMgr->GetTaxiPath(taxi[src], taxi[dst], path, cost);
-        if (path > sTaxiPathNodesByPath.size())
+        if (path >= sTaxiPathNodesByPath.size())
             return;
 
         TaxiPathNodeList const& nodes = sTaxiPathNodesByPath[path];
@@ -230,7 +230,11 @@ void FlightPathMovementGenerator::InitEndGridInfo()
     uint32 nodeCount = _path.size();        //! Number of nodes in path.
     ASSERT(nodeCount, "FlightPathMovementGenerator::InitEndGridInfo() called with empty _path");
     _endMapId = _path[nodeCount - 1]->MapID; //! MapId of last node
-    _preloadTargetNode = nodeCount - 3;
+    if (nodeCount < 3)
+        _preloadTargetNode = 0;
+    else
+        _preloadTargetNode = nodeCount - 3;
+
     _endGridX = _path[nodeCount - 1]->LocX;
     _endGridY = _path[nodeCount - 1]->LocY;
 }

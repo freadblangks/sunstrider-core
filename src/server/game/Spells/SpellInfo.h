@@ -219,7 +219,7 @@ private:
     Targets _target;
 
 public:
-    SpellImplicitTargetInfo() : _target(Targets(0)) { }
+    SpellImplicitTargetInfo() : _target(TARGET_UNIT_CASTER) { }
     SpellImplicitTargetInfo(uint32 target);
 
     bool IsArea() const;
@@ -249,6 +249,8 @@ private:
 
 class TC_GAME_API SpellEffectInfo
 {
+    friend class SpellMgr;
+
     SpellInfo const* _spellInfo;
     uint8 _effIndex;
 public:

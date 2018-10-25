@@ -82,8 +82,7 @@ void TempSummon::Update( uint32 diff )
         }
         case TEMPSUMMON_CORPSE_DESPAWN:
         {
-            // if m_deathState is DEAD, CORPSE was skipped
-            if ( m_deathState == CORPSE || m_deathState == DEAD)
+            if ( m_deathState == CORPSE)
             {
                 UnSummon();
                 return;
@@ -93,17 +92,11 @@ void TempSummon::Update( uint32 diff )
         }
         case TEMPSUMMON_DEAD_DESPAWN:
         {
-            if ( m_deathState == DEAD )
-            {
-                UnSummon();
-                return;
-            }
             break;
         }
         case TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN:
         {
-            // if m_deathState is DEAD, CORPSE was skipped
-            if ( m_deathState == CORPSE || m_deathState == DEAD)
+            if (m_deathState == CORPSE)
             {
                 UnSummon();
                 return;
@@ -119,13 +112,6 @@ void TempSummon::Update( uint32 diff )
         }
         case TEMPSUMMON_TIMED_OR_DEAD_DESPAWN:
         {
-            // if m_deathState is DEAD, CORPSE was skipped
-            if (m_deathState == DEAD)
-            {
-                UnSummon();
-                return;
-            }
-
             if (!IsInCombat() && IsAlive() )
             {
                 if (m_timer <= diff)

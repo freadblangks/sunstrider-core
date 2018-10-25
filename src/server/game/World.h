@@ -290,7 +290,7 @@ enum WorldConfigs
     CONFIG_ANTICHEAT_MOVEMENT_KILL,
     CONFIG_ANTICHEAT_MOVEMENT_WARN_GM,
     CONFIG_ANTICHEAT_MOVEMENT_WARN_GM_COOLDOWN,
-
+    CONFIG_PENDING_MOVE_CHANGES_TIMEOUT,
 
     CONFIG_WARDEN_ENABLED,
     CONFIG_WARDEN_KICK,
@@ -579,7 +579,7 @@ class TC_GAME_API World
 
         /// Get the active session server limit (or security level limitations)
         uint32 GetPlayerAmountLimit() const { return m_playerLimit >= 0 ? m_playerLimit : 0; }
-        AccountTypes GetPlayerSecurityLimit() const { return m_allowedSecurityLevel < 0 ? SEC_PLAYER : m_allowedSecurityLevel; }
+        AccountTypes GetPlayerSecurityLimit() const { return m_allowedSecurityLevel; }
 
         /// Set the active session server limit (or security level limitation)
         void SetPlayerLimit(int32 limit);
@@ -674,7 +674,8 @@ class TC_GAME_API World
             else
                 return 0;
         }
-        //TC compatibility macros
+
+//TC compatibility macros
 #define getIntConfig(a) getConfig(a)
 #define getBoolConfig(a) getConfig(a)
 #define getFloatConfig(a) getConfig(a)

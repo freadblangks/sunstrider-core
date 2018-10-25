@@ -103,7 +103,10 @@ ObjectMgr::ObjectMgr() :
     _hiPetNumber(1),
     _ItemTextId(1),
     _mailid(1),
-    _auctionId(1)
+    _auctionId(1),
+    maxSpellId(0),
+    _GMticketid(0),
+    DBCLocaleIndex(LOCALE_enUS)
 {
     for (uint8 i = 0; i < MAX_CLASSES; ++i)
     {
@@ -276,7 +279,7 @@ void ObjectMgr::LoadCreatureTemplate(Field* fields)
     creatureTemplate.Name             = fields[f++].GetString();
     creatureTemplate.Title            = fields[f++].GetString();
     creatureTemplate.IconName         = fields[f++].GetString();
-    creatureTemplate.GossipMenuId     = fields[f++].GetUInt32();
+    creatureTemplate.GossipMenuId     = fields[f++].GetUInt16();
     creatureTemplate.minlevel         = fields[f++].GetUInt8();
     creatureTemplate.maxlevel         = fields[f++].GetUInt8();
     creatureTemplate.expansion        = fields[f++].GetUInt16();
@@ -1198,6 +1201,8 @@ void ObjectMgr::LoadCreatures()
                 if (GetMapDifficultyData(i, Difficulty(k)))
                     spawnMasks[i] |= (1 << k);
 
+    std::unordered_map<uint32 /*spawnId*/, CreatureData::SpawnDataIds> spawnEntries;
+
     do
     {
         Field* fields = result2->Fetch();
@@ -1222,8 +1227,8 @@ void ObjectMgr::LoadCreatures()
             }
         }
 
-        CreatureData& data = _creatureDataStore[spawnId];
-        data.ids.emplace_back(templateId, equipmentId);
+        CreatureData::SpawnDataIds& data = spawnEntries[spawnId];
+        data.emplace_back(templateId, equipmentId);
 
     } while (result2->NextRow());
 
@@ -1234,14 +1239,12 @@ void ObjectMgr::LoadCreatures()
         uint32 spawnId = fields[0].GetUInt32();
 
         // we create a _creatureDataStore entry in creature_entry loading
-        auto itr = _creatureDataStore.find(spawnId);
-        if (itr == _creatureDataStore.end())
+        auto spawnEntryItr = spawnEntries.find(spawnId);
+        if (spawnEntryItr == spawnEntries.end())
         {
             TC_LOG_ERROR("sql.sql", "Table `creature` has creature (SpawnId: %u) with no listed creature id in table creature_entry, skipped.", spawnId);
             continue;
         }
-
-        CreatureData& data = _creatureDataStore[spawnId];
 
         uint32 mapId = fields[1].GetUInt16();
         MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
@@ -1250,7 +1253,10 @@ void ObjectMgr::LoadCreatures()
             TC_LOG_ERROR("sql.sql", "Table `creature` has creature (SpawnId: %u) spawned on non existent map %u, skipped.", spawnId, mapId);
             continue;
         }
-        data.spawnMask = fields[2].GetUInt8();
+        CreatureData& data = _creatureDataStore[spawnId];
+
+        data.ids = spawnEntryItr->second;
+        data.spawnMask       = fields[2].GetUInt8();
 
         data.spawnPoint.WorldRelocate(mapId, fields[4].GetFloat(), fields[5].GetFloat(), fields[6].GetFloat(), fields[7].GetFloat());
         data.displayid       = fields[ 3].GetUInt32();
@@ -1459,7 +1465,7 @@ void ObjectMgr::LoadGameObjects()
 
         if (data.spawntimesecs == 0 && gInfo->IsDespawnAtAction())
         {
-            TC_LOG_ERROR("sql.sql", "Table `gameobject` has gameobject (SpawnId: %u Entry: %u) with `spawntimesecs` (0) value, but the gameobejct is marked as despawnable at action.", guid, data.id);
+            TC_LOG_ERROR("sql.sql", "Table `gameobject` has gameobject (SpawnId: %u Entry: %u) with `spawntimesecs` (0) value, but the gameobject is marked as despawnable at action.", guid, data.id);
         }
 
         if (data.go_state >= MAX_GO_STATE)
@@ -2505,14 +2511,14 @@ void ObjectMgr::LoadPetLevelInfo()
             if(current_level > sWorld->getConfig(CONFIG_MAX_PLAYER_LEVEL))
             {
                 if(current_level > STRONG_MAX_LEVEL)        // hardcoded level maximum
-                    TC_LOG_ERROR("FIXME","Wrong (> %u) level %u in `pet_levelstats` table, ignoring.",STRONG_MAX_LEVEL,current_level);
+                    TC_LOG_ERROR("sql.sql","Wrong (> %u) level %u in `pet_levelstats` table, ignoring.",STRONG_MAX_LEVEL,current_level);
                 else
-                    TC_LOG_DEBUG("FIXME","Unused (> MaxPlayerLevel in Trinityd.conf) level %u in `pet_levelstats` table, ignoring.",current_level);
+                    TC_LOG_DEBUG("misc","Unused (> MaxPlayerLevel in worldserver.conf) level %u in `pet_levelstats` table, ignoring.",current_level);
                 continue;
             }
             else if(current_level < 1)
             {
-                TC_LOG_ERROR("FIXME","Wrong (<1) level %u in `pet_levelstats` table, ignoring.",current_level);
+                TC_LOG_ERROR("sql.sql","Wrong (<1) level %u in `pet_levelstats` table, ignoring.",current_level);
                 continue;
             }
 
@@ -2914,7 +2920,7 @@ void ObjectMgr::LoadPlayerInfo()
                 if(current_level > STRONG_MAX_LEVEL)        // hardcoded level maximum
                     TC_LOG_ERROR("sql.sql","Wrong (> %u) level %u in `player_classlevelstats` table, ignoring.", STRONG_MAX_LEVEL,current_level);
                 else
-                    TC_LOG_DEBUG("sql.sql","Unused (> MaxPlayerLevel in Trinityd.conf) level %u in `player_classlevelstats` table, ignoring.",current_level);
+                    TC_LOG_DEBUG("sql.sql","Unused (> MaxPlayerLevel in worldserver.conf) level %u in `player_classlevelstats` table, ignoring.",current_level);
                 continue;
             }
             else if (current_level == 0) {
@@ -3007,7 +3013,7 @@ void ObjectMgr::LoadPlayerInfo()
                 if(current_level > STRONG_MAX_LEVEL)        // hardcoded level maximum
                     TC_LOG_ERROR("sql.sql","Wrong (> %u) level %u in `player_levelstats` table, ignoring.",STRONG_MAX_LEVEL,current_level);
                 else
-                    TC_LOG_DEBUG("sql.sql","Unused (> MaxPlayerLevel in Trinityd.conf) level %u in `player_levelstats` table, ignoring.",current_level);
+                    TC_LOG_DEBUG("sql.sql","Unused (> MaxPlayerLevel in worldserver.conf) level %u in `player_levelstats` table, ignoring.",current_level);
                 continue;
             }
 
@@ -4680,9 +4686,6 @@ void ObjectMgr::LoadInstanceTemplate()
     for(auto i : _instanceTemplateStore)
     {
         InstanceTemplate* temp = &(i.second);
-        if(!temp) 
-            continue;
-
         const MapEntry* entry = sMapStore.LookupEntry(i.first);
         if(!entry)
             continue;  //should never happen if sMapStore isn't altered elswhere

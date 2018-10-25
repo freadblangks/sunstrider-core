@@ -36,10 +36,12 @@ public:
     static void RegisterModule(const std::string& name, ModuleFactory* m);
 
     void OnClientPacketReceived(WorldPacket const& packet);
+    //movementInfo contains original packet from client, with time untouched
     void OnPlayerMoved(Unit const* moved, MovementInfo const& movementInfo, OpcodeClient opcode);
     void OnPlayerSetFlying(Unit const* moved, bool set);
     void OnPlayerKnockBack(Unit const* moved);
     void OnPlayerTeleport(Unit const* moved);
+    //oldMover, newMover may be nullptr
     void OnPlayerMoverChanged(Unit const* oldMover, Unit const* newMover);
     void OnPlayerSpeedChanged(Unit const* moved, float oldSpeed, float newSpeed);
     void OnPlayerWaterWalk(Unit const* moved);

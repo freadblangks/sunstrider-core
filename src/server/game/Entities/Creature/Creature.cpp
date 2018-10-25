@@ -305,17 +305,18 @@ Creature::Creature(bool isWorldObject) : Unit(isWorldObject), MapObject(),
     m_combatPulseTime(0), 
     m_combatPulseDelay(0),
     m_lastDamagedTime(0),
-    m_movementFlagsUpdateTimer(MOVEMENT_FLAGS_UPDATE_TIMER)
+    m_movementFlagsUpdateTimer(MOVEMENT_FLAGS_UPDATE_TIMER),
+    m_originalEntry(0),
+    m_questPoolId(0),
+    m_chosenTemplate(0),
+    m_spells(),
+    disableReputationGain(false)
 {
     m_valuesCount = UNIT_END;
-
-    for(uint32 & m_spell : m_spells)
-        m_spell = 0;
 
     m_SightDistance = sWorld->getFloatConfig(CONFIG_SIGHT_MONSTER);
 
     ResetLootMode(); // restore default loot mode
-    DisableReputationGain = false;
 }
 
 Creature::~Creature()
@@ -800,7 +801,7 @@ void Creature::Update(uint32 diff)
 
             if(IsInCombat() && 
                 (IsWorldBoss() || GetCreatureTemplate()->flags_extra & CREATURE_FLAG_EXTRA_INSTANCE_BIND) &&
-                GetMap() && GetMap()->IsDungeon())
+                GetMap()->IsDungeon())
             {
                 if(m_areaCombatTimer < diff)
                 {
@@ -991,7 +992,7 @@ void Creature::Regenerate(Powers power)
                 }
             }
             else
-                addvalue = maxValue / 3;
+                addvalue = maxValue / 3.0f;
 
             break;
         }
@@ -1002,7 +1003,7 @@ void Creature::Regenerate(Powers power)
     // Apply modifiers (if any).
     addvalue *= GetTotalAuraMultiplierByMiscValue(SPELL_AURA_MOD_POWER_REGEN_PERCENT, power);
 
-    addvalue += GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_POWER_REGEN, power) * (IsHunterPet() ? PET_FOCUS_REGEN_INTERVAL : CREATURE_REGEN_INTERVAL) / (5 * IN_MILLISECONDS);
+    addvalue += float(GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_POWER_REGEN, power)) * (IsHunterPet() ? PET_FOCUS_REGEN_INTERVAL : CREATURE_REGEN_INTERVAL) / (5 * IN_MILLISECONDS);
 
     ModifyPower(power, addvalue);
 }
@@ -1541,6 +1542,8 @@ void Creature::SaveToDB(uint32 mapid, uint8 spawnMask)
     stmt->setUInt32(0, m_spawnId);
     trans->Append(stmt);
 
+    trans->PAppend("REPLACE INTO creature_entry (`spawnID`,`entry`) VALUES (%u,%u)", m_spawnId, GetEntry());
+
     std::ostringstream ss;
     ss << "INSERT INTO creature (spawnId,map,spawnMask,modelid,equipment_id,position_x,position_y,position_z,orientation,spawntimesecs,spawndist,currentwaypoint,curhealth,curmana,MovementType, pool_id) VALUES ("
         << m_spawnId << ","
@@ -1828,12 +1831,13 @@ void Creature::SetSpawnHealth()
     if (m_creatureData && !m_regenHealth)
     {
         curhealth = m_creatureData->curhealth;
+        /*
         if (curhealth)
         {
-            curhealth = uint32(curhealth /* * _GetHealthMod(GetCreatureTemplate()->rank)*/);
+            curhealth = uint32(curhealth * _GetHealthMod(GetCreatureTemplate()->rank));
             if (curhealth < 1)
                 curhealth = 1;
-        }
+        }*/
         SetPower(POWER_MANA, m_creatureData->curmana);
     }
     else
@@ -2975,7 +2979,7 @@ void Creature::AllLootRemovedFromCorpse()
     CreatureTemplate const *cinfo = GetCreatureTemplate();
 
     // corpse skinnable, but without skinning flag, and then skinned, corpse will despawn next update
-    if (cinfo && cinfo->SkinLootId)
+    if (loot.loot_type == LOOT_SKINNING)
         m_corpseRemoveTime = now;
     else
         m_corpseRemoveTime = now + uint32(m_corpseDelay * decayRate);
@@ -3105,7 +3109,7 @@ TrainerSpellData const* Creature::GetTrainerSpells() const
 // overwrite WorldObject function for proper name localization
 std::string const& Creature::GetNameForLocaleIdx(LocaleConstant loc_idx) const
 {
-    if (loc_idx >= 0)
+    if (loc_idx != DEFAULT_LOCALE)
     {
         CreatureLocale const *cl = sObjectMgr->GetCreatureLocale(GetEntry());
         if (cl)
@@ -3393,24 +3397,6 @@ bool Creature::IsFocusing(Spell const* focusSpell, bool withDelay)
     return true;
 }
 
-bool Creature::SetDisableGravity(bool disable, bool packetOnly/*=false*/)
-{
-    //! It's possible only a packet is sent but moveflags are not updated
-    //! Need more research on this
-    if (!packetOnly && !Unit::SetDisableGravity(disable))
-        return false;
-
-#ifdef LICH_KING
-     if (!movespline->Initialized())
-        return true;
-
-    WorldPacket data(disable ? SMSG_SPLINE_MOVE_GRAVITY_DISABLE : SMSG_SPLINE_MOVE_GRAVITY_ENABLE, 9);
-    data << GetPackGUID();
-    SendMessageToSet(&data, false);
-#endif
-    return true;
-}
-
 uint32 Creature::GetPetAutoSpellOnPos(uint8 pos) const
 {
     if (pos >= MAX_SPELL_CHARM || m_charmInfo->GetCharmSpell(pos)->GetType() != ACT_ENABLED)
@@ -3467,31 +3453,13 @@ bool Creature::SetSwim(bool enable)
     return true;
 }
 
-bool Creature::SetFlying(bool enable, bool packetOnly /* = false */)
+void Creature::SetFlying(bool enable)
 {
-    if (!Unit::SetFlying(enable))
-        return false;
-
-    if (!movespline->Initialized())
-        return true;
+    Unit::SetFlying(enable);
 
     //also mark creature as able to fly to avoid getting fly mode removed
     if(enable)
         _SetCanFly(enable, false);
-
-    WorldPacket data(enable ? SMSG_SPLINE_MOVE_SET_FLYING : SMSG_SPLINE_MOVE_UNSET_FLYING, 9);
-    data << GetPackGUID();
-    SendMessageToSet(&data, false);
-
-    // Testing this from https://github.com/TrinityCore/TrinityCore/issues/22421
-    if (IsLevitating())
-        SetAnimationTier(UnitAnimationTier::Fly);
-    else if (IsHovering())
-        SetAnimationTier(UnitAnimationTier::Hover);
-    else
-        SetAnimationTier(UnitAnimationTier::Ground);
-
-    return true;
 }
 
 void Creature::_SetCanFly(bool enable, bool updateMovementFlags /* = true */) 
@@ -3499,58 +3467,6 @@ void Creature::_SetCanFly(bool enable, bool updateMovementFlags /* = true */)
     m_canFly = enable; 
     if (updateMovementFlags)
         UpdateMovementFlags();
-}
-
-bool Creature::SetWaterWalking(bool enable, bool packetOnly /* = false */)
-{
-    if (!packetOnly && !Unit::SetWaterWalking(enable))
-        return false;
-
-    if (!movespline->Initialized())
-        return true;
-
-    WorldPacket data(enable ? SMSG_SPLINE_MOVE_WATER_WALK : SMSG_SPLINE_MOVE_LAND_WALK);
-    data << GetPackGUID();
-    SendMessageToSet(&data, true);
-    return true;
-}
-
-bool Creature::SetFeatherFall(bool enable, bool packetOnly /* = false */)
-{
-    if (!packetOnly && !Unit::SetFeatherFall(enable))
-        return false;
-
-    if (!movespline->Initialized())
-        return true;
-
-    WorldPacket data(enable ? SMSG_SPLINE_MOVE_FEATHER_FALL : SMSG_SPLINE_MOVE_NORMAL_FALL);
-    data << GetPackGUID();
-    SendMessageToSet(&data, true);
-    return true;
-}
-
-bool Creature::SetHover(bool enable, bool packetOnly /*= false*/)
-{
-    if (!packetOnly && !Unit::SetHover(enable))
-        return false;
-
-    if (!movespline->Initialized())
-        return true;
-
-    //! Not always a packet is sent
-    WorldPacket data(enable ? SMSG_SPLINE_MOVE_SET_HOVER : SMSG_SPLINE_MOVE_UNSET_HOVER, 9);
-    data << GetPackGUID();
-    SendMessageToSet(&data, false);
-
-    // Testing this from https://github.com/TrinityCore/TrinityCore/issues/22421
-    if (IsLevitating())
-        SetAnimationTier(UnitAnimationTier::Fly);
-    else if (IsHovering())
-        SetAnimationTier(UnitAnimationTier::Hover);
-    else
-        SetAnimationTier(UnitAnimationTier::Ground);
-
-    return true;
 }
 
 void Creature::UpdateMovementFlags(bool force /* = false */)

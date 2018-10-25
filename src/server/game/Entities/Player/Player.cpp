@@ -172,10 +172,6 @@ Player::Player(WorldSession *session) :
     m_hasMovedInUpdate(false),
     m_seer(this),
     m_needsZoneUpdate(false),
-    m_timeSyncCounter(0),
-    m_timeSyncTimer(0),
-    m_timeSyncClient(0),
-    m_timeSyncServer(0),
     m_teleportToTestInstanceId(0),
     m_speakTime(0),
     m_speakCount(0),
@@ -224,8 +220,7 @@ Player::Player(WorldSession *session) :
     mSemaphoreTeleport_Near = false;
     mSemaphoreTeleport_Far = false;
 
-    m_unitMovedByMe = this;
-    m_playerMovingMe = this;
+    m_playerMovingMe = session;
 
     m_cinematic = 0;
     if (sWorld->getConfig(CONFIG_BETASERVER_ENABLED))
@@ -249,7 +244,7 @@ Player::Player(WorldSession *session) :
     m_restTime = 0;
     m_deathTimer = 0;
     m_deathExpireTime = 0;
-    m_deathTime = 0;
+    m_isRepopPending = false;
 
     m_swingErrorMsg = 0;
 
@@ -381,6 +376,9 @@ Player::~Player()
 {
     // it must be unloaded already in PlayerLogout and accessed only for loggined player
     //m_social = nullptr;
+
+    if (m_playerMovingMe)
+        m_playerMovingMe->ResetActiveMover(true);
 
     // Note: buy back item already deleted from DB when player was saved
     for(auto & m_item : m_items)
@@ -676,7 +674,7 @@ bool Player::Create(ObjectGuid::LowType guidlow, const std::string& name, uint8 
             if( msg == EQUIP_ERR_OK )
             {
                 RemoveItem(INVENTORY_SLOT_BAG_0, i,true);
-                EquipItem( eDest, pItem, true);
+                EquipItem( eDest, pItem, true, false);
             }
             // move other items to more appropriate slots (ammo not equipped in special bag)
             else
@@ -914,10 +912,16 @@ void Player::StopMirrorTimer(MirrorTimerType Type)
     SendDirectMessage(&data);
 }
 
-void Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
+bool Player::IsImmuneToEnvironmentalDamage() const
 {
-    if (!IsAlive() || IsGameMaster() || isSpectator())
-        return;
+    // check for GM and death state included in isAttackableByAOE
+    return !IsTargetableForAttack(false);
+}
+
+uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
+{
+    if (IsImmuneToEnvironmentalDamage())
+        return 0;
 
     // Absorb, resist some environmental damage type
     uint32 absorb = 0;
@@ -948,7 +952,7 @@ void Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
     data << uint32(resist);
     SendMessageToSet(&data, true);
 
-    Unit::DealDamage(this, this, damage, nullptr, SELF_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, nullptr, false);
+    uint32 final_damage = Unit::DealDamage(this, this, damage, nullptr, SELF_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, nullptr, false);
 
     if (type==DAMAGE_FALL && !IsAlive())                     // DealDamage not apply item durability loss at self damage
     {
@@ -958,6 +962,8 @@ void Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
         WorldPacket data2(SMSG_DURABILITY_DAMAGE_DEATH, 0);
         SendDirectMessage(&data2);
     }
+
+    return final_damage;
 }
 
 int32 Player::getMaxTimer(MirrorTimerType timer)
@@ -1167,7 +1173,8 @@ void Player::Update( uint32 p_time )
     if(!IsInWorld())
         return;
 
-    if (m_kickatnextupdate && m_session) {
+    if (m_kickatnextupdate && m_session) 
+    {
         m_kickatnextupdate = false;
         m_session->LogoutPlayer(false);
         return;
@@ -1364,14 +1371,6 @@ void Player::Update( uint32 p_time )
         }
         else
             m_zoneUpdateTimer -= p_time;
-    }
-
-    if (m_timeSyncTimer > 0)
-    {
-        if (p_time >= m_timeSyncTimer)
-            SendTimeSync();
-        else
-            m_timeSyncTimer -= p_time;
     }
 
     if (IsAlive())
@@ -1852,7 +1851,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
 #ifdef LICH_KING
                 z += GetFloatValue(UNIT_FIELD_HOVERHEIGHT);
 #else
-                z += UNIT_DEFAULT_HOVERHEIGHT;
+                z += DEFAULT_HOVER_HEIGHT;
 #endif
             SendTeleportPacket(m_teleport_dest, (options & TELE_TO_TRANSPORT_TELEPORT) != 0);
             if (!IsWithinDist3d(x, y, z, GetMap()->GetVisibilityRange()))
@@ -1861,6 +1860,16 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
     }
     else
     {
+        if (GetSession()->HasPendingMovementChange())
+        {
+            SetDelayedTeleportFlag(true);
+            SetSemaphoreTeleportFar(true);
+            //lets save teleport destination for player
+            m_teleport_dest = WorldLocation(mapid, x, y, z, orientation);
+            m_teleport_options = options;
+            return true;
+        }
+
         // far teleport to another map
         Map* oldmap = IsInWorld() ? GetMap() : nullptr;
         // check if we can enter before stopping combat / removing pet / totems / interrupting spells
@@ -1934,6 +1943,19 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
 
             //remove auras before removing from map...
             RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_CHANGE_MAP | AURA_INTERRUPT_FLAG_MOVE | AURA_INTERRUPT_FLAG_TURNING);
+
+            // removing some auras (example spell id 26656) can trigger movement changes. Using this block to ensure that
+            // teleports are delayed as long as there are still pending movement changes.
+            if (GetSession()->HasPendingMovementChange())
+            {
+                SetDelayedTeleportFlag(true);
+                SetSemaphoreTeleportFar(true);
+                //lets save teleport destination for player
+                m_teleport_dest = WorldLocation(mapid, x, y, z, orientation);
+                m_teleport_options = options;
+                return true;
+            }
+            ASSERT(!GetSession()->HasPendingMovementChange());
 
             if (!GetSession()->PlayerLogout())
             {
@@ -2210,7 +2232,7 @@ void Player::RegenerateHealth()
 
     // polymorphed case
     if ( IsPolymorphed() )
-        addValue = GetMaxHealth()/3;
+        addValue = GetMaxHealth() / 3.0f;
     // normal regen case (maybe partly in combat case)
     else if (!IsInCombat() || HasAuraType(SPELL_AURA_MOD_REGEN_DURING_COMBAT) )
     {
@@ -3875,7 +3897,7 @@ Mail* Player::GetMail(uint32 id)
     return nullptr;
 }
 
-void Player::BuildCreateUpdateBlockForPlayer( UpdateData *data, Player *target ) const
+void Player::BuildCreateUpdateBlockForPlayer(UpdateData *data, Player *target) const
 {
     for(uint8 i = 0; i < EQUIPMENT_SLOT_END; i++)
     {
@@ -3904,7 +3926,7 @@ void Player::BuildCreateUpdateBlockForPlayer( UpdateData *data, Player *target )
         }
     }
 
-    Unit::BuildCreateUpdateBlockForPlayer( data, target );
+    Unit::BuildCreateUpdateBlockForPlayer(data, target);
 }
 
 void Player::DestroyForPlayer(Player *target, bool onDeath) const
@@ -4031,6 +4053,11 @@ void Player::DeleteOldCharacters()
     uint32 keepDays = sWorld->getIntConfig(CONFIG_CHARDELETE_KEEP_DAYS);
     if (!keepDays)
         return;
+    if (uint64(keepDays) * DAY > INT_MAX)
+    {
+        TC_LOG_ERROR("entities.player", "Player::DeleteOldCharacters: Invalid % days, reverting to 1 year", keepDays);
+        keepDays = 365;
+    }
 
     TC_LOG_INFO("entities.player", "Player::DeleteOldCharacters: Deleting all characters which have been deleted %u days before...", keepDays);
 
@@ -4257,34 +4284,6 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
     sCharacterCache->DeleteCharacterCacheEntry(playerguid, name);
 }
 
-void Player::SetMovement(PlayerMovementType pType)
-{
-    WorldPacket data;
-    switch(pType)
-    {
-        case MOVE_ROOT:       data.Initialize(SMSG_FORCE_MOVE_ROOT,   GetPackGUID().size()+4); break;
-        case MOVE_UNROOT:     data.Initialize(SMSG_FORCE_MOVE_UNROOT, GetPackGUID().size()+4); break;
-        case MOVE_WATER_WALK: data.Initialize(SMSG_MOVE_WATER_WALK,   GetPackGUID().size()+4); break;
-        case MOVE_LAND_WALK:  data.Initialize(SMSG_MOVE_LAND_WALK,    GetPackGUID().size()+4); break;
-        default:
-            TC_LOG_ERROR("entities.player","Player::SetMovement: Unsupported move type (%d), data not sent to client.",pType);
-            return;
-    }
-    data << GetPackGUID();
-    data << uint32(0);
-
-    /* Should we also send it to mover? Or does the target session broadcast the change itself later?
-    if (GetUnitBeingMoved() && GetUnitBeingMoved()->GetTypeId() == TYPEID_PLAYER)
-    {
-         Player* pMover = (Player*)GetUnitBeingMoved();
-         if (pMover != this)
-             pMover->GetSession()->SendPacket(data);
-    }
-    */
-
-    SendDirectMessage( &data );
-}
-
 /* Preconditions:
   - a resurrectable corpse must not be loaded for the player (only bones)
   - the player must be in world
@@ -4294,14 +4293,13 @@ void Player::BuildPlayerRepop()
 #ifdef LICH_KING
     WorldPacket data(SMSG_PRE_RESURRECT, GetPackGUID().size());
     data << GetPackGUID();
-    GetSession()->SendPacket(&data);
+    SendMessageToSet(&data, true);
 #endif
 
     if(GetRace() == RACE_NIGHTELF)
         CastSpell(this, 20584, true);                       // auras SPELL_AURA_INCREASE_SPEED(+speed in wisp form), SPELL_AURA_INCREASE_SWIM_SPEED(+swim speed in wisp form), SPELL_AURA_TRANSFORM (to wisp form)
     CastSpell(this, 8326, true);                            // auras SPELL_AURA_GHOST, SPELL_AURA_INCREASE_SPEED(why?), SPELL_AURA_INCREASE_SWIM_SPEED(why?)
 
-    // there must be SMSG.FORCE_RUN_SPEED_CHANGE, SMSG.FORCE_SWIM_SPEED_CHANGE, SMSG.MOVE_WATER_WALK
     // there must be SMSG.STOP_MIRROR_TIMER
     // there we must send 888 opcode
 
@@ -4326,10 +4324,6 @@ void Player::BuildPlayerRepop()
     SetDeathState(DEAD);
     SetHealth(1);
 
-    SetMovement(MOVE_WATER_WALK);
-    if(!GetSession()->isLogingOut())
-        SetMovement(MOVE_UNROOT);
-
     // BG - remove insignia related
     RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE);
 
@@ -4345,7 +4339,7 @@ void Player::BuildPlayerRepop()
 
     SetFloatValue(UNIT_FIELD_BOUNDINGRADIUS, (float)1.0);   //see radius of death player?
 
-    SetByteValue(UNIT_FIELD_BYTES_1, UNIT_BYTES_1_OFFSET_ANIM_TIER, UNIT_BYTE1_FLAG_ALWAYS_STAND);
+    SetAnimationTier(UnitAnimationTier::Ground);
 
     // OnPlayerRepop hook
     //sScriptMgr->OnPlayerRepop(this);
@@ -4353,12 +4347,15 @@ void Player::BuildPlayerRepop()
 
 void Player::ResurrectPlayer(float restore_percent, bool applySickness)
 {
-    WorldPacket data(SMSG_DEATH_RELEASE_LOC, 4*4);          // remove spirit healer position
+    WorldPacket data(SMSG_DEATH_RELEASE_LOC, 4*4);          // remove spirit healer position, LK ok
     data << uint32(-1);
     data << float(0);
     data << float(0);
     data << float(0);
     SendDirectMessage(&data);
+
+    if (!HasUnitState(UNIT_STATE_ROOT))
+        SetRooted(false);
 
     // send spectate addon message
     if (HaveSpectators())
@@ -4370,6 +4367,7 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
     }
 
     // speed change, land walk
+    SetRooted(false);
 
     // remove death flag + set aura
     SetByteValue(UNIT_FIELD_BYTES_1, UNIT_BYTES_1_OFFSET_ANIM_TIER, 0x00);
@@ -4379,9 +4377,6 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
     RemoveAurasDueToSpell(8326);                            // SPELL_AURA_GHOST
 
     SetDeathState(ALIVE);
-
-    SetMovement(MOVE_LAND_WALK);
-    SetMovement(MOVE_UNROOT);
 
     m_deathTimer = 0;
 
@@ -4437,19 +4432,18 @@ void Player::KillPlayer()
     if (IsFlying() && !GetTransport())
         GetMotionMaster()->MoveFall();
 
-    SetMovement(MOVE_ROOT);
+    SetRooted(true);
 
     StopMirrorTimers();                                     //disable timers(bars)
 
+    SetHealth(0); //sun: added this: else we can be in corpse but still have health... this should not be a possible state.
     SetDeathState(CORPSE);
 
     SetFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_NONE);
     ApplyModFlag(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTE_RELEASE_TIMER, !sMapStore.LookupEntry(GetMapId())->Instanceable());
 
     // 6 minutes until repop at graveyard
-    m_deathTimer = 6*MINUTE*1000;
-
-    m_deathTime = GetMap()->GetGameTime();
+    m_deathTimer = 6 * MINUTE*IN_MILLISECONDS;
 
     UpdateCorpseReclaimDelay();                             // dependent at use SetDeathPvP() call before kill
 
@@ -4459,7 +4453,7 @@ void Player::KillPlayer()
         SendCorpseReclaimDelay(corpseReclaimDelay);
 
     /* Sunwell/Kalecgos: death in spectral realm */
-    if (GetMapId() == 580 && GetPositionZ() < -65)
+    if (GetMapId() == 580 && GetPositionZ() < -65.f)
         TeleportTo(GetMapId(), GetPositionX(), GetPositionY(), 53.079, GetOrientation());
 
     // don't create corpse at this moment, player might be falling
@@ -4752,6 +4746,7 @@ uint32 Player::DurabilityRepair(uint16 pos, bool cost, float discountMod, bool g
 
 void Player::RepopAtGraveyard()
 {
+    SetIsRepopPending(false);
     // note: this can be called also when the player is alive
     // for example from WorldSession::HandleMovementOpcodes
 
@@ -6168,9 +6163,7 @@ void Player::CheckAreaExploreAndOutdoor()
                 else if (diff > 5)
                 {
                     int32 exploration_percent = (100-((diff-5)*5));
-                    if (exploration_percent > 100)
-                        exploration_percent = 100;
-                    else if (exploration_percent < 0)
+                    if (exploration_percent < 0)
                         exploration_percent = 0;
 
                     if (hasCustomXpRate())
@@ -9219,7 +9212,7 @@ bool Player::IsBagPos(uint16 pos)
     return false;
 }
 
-bool Player::IsValidPos( uint8 bag, uint8 slot ) const
+bool Player::IsValidPos(uint8 bag, uint8 slot) const
 {
     // post selected
     if(bag == NULL_BAG)
@@ -9252,7 +9245,7 @@ bool Player::IsValidPos( uint8 bag, uint8 slot ) const
             return true;
 
         // bank bag slots
-        if (slot >= BANK_SLOT_BAG_START && slot < BANK_SLOT_BAG_END)
+        if (slot < BANK_SLOT_BAG_END)
             return true;
 
         return false;
@@ -10371,9 +10364,10 @@ InventoryResult Player::CanEquipItem( uint8 slot, uint16 &dest, Item *pItem, boo
 
                 if(IsInCombat()&& pProto->Class == ITEM_CLASS_WEAPON && m_weaponChangeTimer != 0)
                     return EQUIP_ERR_CANT_DO_RIGHT_NOW;         // maybe exist better err
-
+#ifdef LICH_KING
                 if(IsNonMeleeSpellCast(false))
                     return EQUIP_ERR_CANT_DO_RIGHT_NOW;
+#endif
             }
 
             uint8 eslot = FindEquipSlot( pProto, slot, swap );
@@ -10517,13 +10511,13 @@ InventoryResult Player::CanUnequipItem( uint16 pos, bool swap ) const
 
 InventoryResult Player::CanBankItem( uint8 bag, uint8 slot, ItemPosCountVec &dest, Item *pItem, bool swap, bool not_loading ) const
 {
-    if( !pItem )
+    if (!pItem)
         return swap ? EQUIP_ERR_ITEMS_CANT_BE_SWAPPED : EQUIP_ERR_ITEM_NOT_FOUND;
 
     uint32 count = pItem->GetCount();
 
-    ItemTemplate const *pProto = pItem->GetTemplate();
-    if( !pProto )
+    ItemTemplate const* pProto = pItem->GetTemplate();
+    if (!pProto)
         return swap ? EQUIP_ERR_ITEMS_CANT_BE_SWAPPED : EQUIP_ERR_ITEM_NOT_FOUND;
 
     if (pItem->IsBindedNotWith(this))
@@ -10531,30 +10525,27 @@ InventoryResult Player::CanBankItem( uint8 bag, uint8 slot, ItemPosCountVec &des
 
     // check count of items (skip for auto move for same player from bank)
     InventoryResult res = CanTakeMoreSimilarItems(pItem);
-    if(res != EQUIP_ERR_OK)
+    if (res != EQUIP_ERR_OK)
         return res;
 
     // in specific slot
-    if( bag != NULL_BAG && slot != NULL_SLOT )
+    if (bag != NULL_BAG && slot != NULL_SLOT)
     {
-        if( pProto->InventoryType == INVTYPE_BAG )
+        if (pProto->InventoryType == INVTYPE_BAG)
         {
-            Bag *pBag = (Bag*)pItem;
-            if( pBag )
+            Bag* pBag = static_cast<Bag*>(pItem);
+            if (slot >= BANK_SLOT_BAG_START && slot < BANK_SLOT_BAG_END)
             {
-                if( slot >= BANK_SLOT_BAG_START && slot < BANK_SLOT_BAG_END )
-                {
-                    if( !HasBankBagSlot( slot ) )
-                        return EQUIP_ERR_MUST_PURCHASE_THAT_BAG_SLOT;
-                    InventoryResult canUse = CanUseItem(pItem, not_loading);
-                    if(canUse != EQUIP_ERR_OK)
-                        return canUse;
-                }
-                else
-                {
-                    if( !pBag->IsEmpty() )
-                        return EQUIP_ERR_NONEMPTY_BAG_OVER_OTHER_BAG;
-                }
+                if (!HasBankBagSlot(slot))
+                    return EQUIP_ERR_MUST_PURCHASE_THAT_BAG_SLOT;
+                InventoryResult canUse = CanUseItem(pItem, not_loading);
+                if(canUse != EQUIP_ERR_OK)
+                    return canUse;
+            }
+            else
+            {
+                if (!pBag->IsEmpty())
+                    return EQUIP_ERR_NONEMPTY_BAG_OVER_OTHER_BAG;
             }
         }
         else
@@ -10564,71 +10555,71 @@ InventoryResult Player::CanBankItem( uint8 bag, uint8 slot, ItemPosCountVec &des
         }
 
         res = _CanStoreItem_InSpecificSlot(bag,slot,dest,pProto,count,swap,pItem);
-        if(res!=EQUIP_ERR_OK)
+        if (res != EQUIP_ERR_OK)
             return res;
 
-        if(count==0)
+        if (count == 0)
             return EQUIP_ERR_OK;
     }
 
     // not specific slot or have space for partly store only in specific slot
 
     // in specific bag
-    if( bag != NULL_BAG )
+    if (bag != NULL_BAG)
     {
-        if( pProto->InventoryType == INVTYPE_BAG )
+        if (pProto->InventoryType == INVTYPE_BAG)
         {
             Bag *pBag = (Bag*)pItem;
-            if( pBag && !pBag->IsEmpty() )
+            if (pBag && !pBag->IsEmpty())
                 return EQUIP_ERR_NONEMPTY_BAG_OVER_OTHER_BAG;
         }
 
         // search stack in bag for merge to
-        if( pProto->Stackable > 1 )
+        if (pProto->Stackable > 1)
         {
-            if( bag == INVENTORY_SLOT_BAG_0 )
+            if (bag == INVENTORY_SLOT_BAG_0)
             {
-                res = _CanStoreItem_InInventorySlots(BANK_SLOT_ITEM_START,BANK_SLOT_ITEM_END,dest,pProto,count,true,pItem,bag,slot);
-                if(res!=EQUIP_ERR_OK)
+                res = _CanStoreItem_InInventorySlots(BANK_SLOT_ITEM_START, BANK_SLOT_ITEM_END, dest, pProto, count, true, pItem, bag, slot);
+                if (res != EQUIP_ERR_OK)
                     return res;
 
-                if(count==0)
+                if (count == 0)
                     return EQUIP_ERR_OK;
             }
             else
             {
-                res = _CanStoreItem_InBag(bag,dest,pProto,count,true,false,pItem,NULL_BAG,slot);
-                if(res!=EQUIP_ERR_OK)
-                    res = _CanStoreItem_InBag(bag,dest,pProto,count,true,true,pItem,NULL_BAG,slot);
+                res = _CanStoreItem_InBag(bag, dest, pProto, count, true, false, pItem, NULL_BAG, slot);
+                if (res != EQUIP_ERR_OK)
+                    res = _CanStoreItem_InBag(bag, dest, pProto, count, true, true, pItem, NULL_BAG, slot);
 
-                if(res!=EQUIP_ERR_OK)
+                if (res != EQUIP_ERR_OK)
                     return res;
 
-                if(count==0)
+                if (count == 0)
                     return EQUIP_ERR_OK;
             }
         }
 
         // search free slot in bag
-        if( bag == INVENTORY_SLOT_BAG_0 )
+        if (bag == INVENTORY_SLOT_BAG_0)
         {
-            res = _CanStoreItem_InInventorySlots(BANK_SLOT_ITEM_START,BANK_SLOT_ITEM_END,dest,pProto,count,false,pItem,bag,slot);
-            if(res!=EQUIP_ERR_OK)
+            res = _CanStoreItem_InInventorySlots(BANK_SLOT_ITEM_START, BANK_SLOT_ITEM_END, dest, pProto, count, false, pItem, bag, slot);
+            if (res != EQUIP_ERR_OK)
                 return res;
 
-            if(count==0)
+            if (count == 0)
                 return EQUIP_ERR_OK;
         }
         else
         {
-            res = _CanStoreItem_InBag(bag,dest,pProto,count,false,false,pItem,NULL_BAG,slot);
-            if(res!=EQUIP_ERR_OK)
-                res = _CanStoreItem_InBag(bag,dest,pProto,count,false,true,pItem,NULL_BAG,slot);
+            res = _CanStoreItem_InBag(bag, dest, pProto, count, false, false, pItem, NULL_BAG, slot);
+            if (res != EQUIP_ERR_OK)
+                res = _CanStoreItem_InBag(bag, dest, pProto, count, false, true, pItem, NULL_BAG, slot);
 
-            if(res!=EQUIP_ERR_OK)
+            if (res != EQUIP_ERR_OK)
                 return res;
 
-            if(count==0)
+            if (count == 0)
                 return EQUIP_ERR_OK;
         }
     }
@@ -10636,72 +10627,73 @@ InventoryResult Player::CanBankItem( uint8 bag, uint8 slot, ItemPosCountVec &des
     // not specific bag or have space for partly store only in specific bag
 
     // search stack for merge to
-    if( pProto->Stackable > 1 )
+    if (pProto->Stackable > 1)
     {
         // in slots
-        res = _CanStoreItem_InInventorySlots(BANK_SLOT_ITEM_START,BANK_SLOT_ITEM_END,dest,pProto,count,true,pItem,bag,slot);
-        if(res!=EQUIP_ERR_OK)
+        res = _CanStoreItem_InInventorySlots(BANK_SLOT_ITEM_START, BANK_SLOT_ITEM_END, dest, pProto, count, true, pItem, bag, slot);
+        if (res != EQUIP_ERR_OK)
             return res;
 
-        if(count==0)
+        if (count == 0)
             return EQUIP_ERR_OK;
 
         // in special bags
-        if( pProto->BagFamily )
+        if (pProto->BagFamily)
         {
-            for(int i = BANK_SLOT_BAG_START; i < BANK_SLOT_BAG_END; i++)
+            for (int i = BANK_SLOT_BAG_START; i < BANK_SLOT_BAG_END; i++)
             {
-                res = _CanStoreItem_InBag(i,dest,pProto,count,true,false,pItem,bag,slot);
-                if(res!=EQUIP_ERR_OK)
+                res = _CanStoreItem_InBag(i, dest, pProto, count, true, false, pItem, bag, slot);
+                if (res != EQUIP_ERR_OK)
                     continue;
 
-                if(count==0)
+                if (count == 0)
                     return EQUIP_ERR_OK;
             }
         }
 
-        for(int i = BANK_SLOT_BAG_START; i < BANK_SLOT_BAG_END; i++)
+        for (int i = BANK_SLOT_BAG_START; i < BANK_SLOT_BAG_END; i++)
         {
-            res = _CanStoreItem_InBag(i,dest,pProto,count,true,true,pItem,bag,slot);
-            if(res!=EQUIP_ERR_OK)
+            res = _CanStoreItem_InBag(i, dest, pProto, count, true, true, pItem, bag, slot);
+            if (res != EQUIP_ERR_OK)
                 continue;
 
-            if(count==0)
+            if (count == 0)
                 return EQUIP_ERR_OK;
         }
     }
 
     // search free place in special bag
-    if( pProto->BagFamily )
+    if (pProto->BagFamily)
     {
-        for(int i = BANK_SLOT_BAG_START; i < BANK_SLOT_BAG_END; i++)
+        for (int i = BANK_SLOT_BAG_START; i < BANK_SLOT_BAG_END; i++)
         {
-            res = _CanStoreItem_InBag(i,dest,pProto,count,false,false,pItem,bag,slot);
-            if(res!=EQUIP_ERR_OK)
+            res = _CanStoreItem_InBag(i, dest, pProto, count, false, false, pItem, bag, slot);
+            if (res != EQUIP_ERR_OK)
                 continue;
 
-            if(count==0)
+            if (count == 0)
                 return EQUIP_ERR_OK;
         }
     }
 
     // search free space
-    res = _CanStoreItem_InInventorySlots(BANK_SLOT_ITEM_START,BANK_SLOT_ITEM_END,dest,pProto,count,false,pItem,bag,slot);
-    if(res!=EQUIP_ERR_OK)
+    res = _CanStoreItem_InInventorySlots(BANK_SLOT_ITEM_START, BANK_SLOT_ITEM_END, dest, pProto, count, false, pItem, bag, slot);
+    if (res != EQUIP_ERR_OK)
         return res;
 
-    if(count==0)
+    if (count == 0)
         return EQUIP_ERR_OK;
 
-    for(int i = BANK_SLOT_BAG_START; i < BANK_SLOT_BAG_END; i++)
+    for (int i = BANK_SLOT_BAG_START; i < BANK_SLOT_BAG_END; i++)
     {
-        res = _CanStoreItem_InBag(i,dest,pProto,count,false,true,pItem,bag,slot);
-        if(res!=EQUIP_ERR_OK)
+        res = _CanStoreItem_InBag(i, dest, pProto, count, false, true, pItem, bag, slot);
+        if (res != EQUIP_ERR_OK)
             continue;
 
-        if(count==0)
+        if (count == 0)
             return EQUIP_ERR_OK;
     }
+
     return EQUIP_ERR_BANK_FULL;
 }
 
@@ -10811,14 +10803,14 @@ void Player::SetAmmo( uint32 item )
         return;
 
     // already set
-    if( GetUInt32Value(PLAYER_AMMO_ID) == item )
+    if (GetUInt32Value(PLAYER_AMMO_ID) == item)
         return;
 
     // check ammo
-    InventoryResult msg = CanUseAmmo( item );
-    if( msg != EQUIP_ERR_OK )
+    InventoryResult msg = CanUseAmmo(item);
+    if (msg != EQUIP_ERR_OK)
     {
-        SendEquipError( msg, nullptr, nullptr );
+        SendEquipError(msg, nullptr, nullptr, item);
         return;
     }
 
@@ -10854,8 +10846,8 @@ Item* Player::StoreNewItem(ItemPosCountVec const& dest, uint32 item, bool update
         pItem = StoreItem( dest, pItem, update );
     }
 
-    if (item == 31088)  // Tainted Core
-        SetMovement(MOVE_ROOT);
+    if (item == 31088)  // HACK: Tainted Core
+        SetRooted(true);
 
     // If purple equipable item, save inventory immediately
     if (pItem && pItem->GetTemplate()->Quality >= ITEM_QUALITY_EPIC &&
@@ -11007,10 +10999,15 @@ Item* Player::EquipNewItem(uint16 pos, uint32 item, bool update)
     return nullptr;
 }
 
-Item* Player::EquipItem(uint16 pos, Item *pItem, bool update)
+Item* Player::EquipItem(uint16 pos, Item *pItem, bool update, bool interruptSpells)
 {
     if(pItem)
     {
+#ifndef LICH_KING
+        if (interruptSpells && IsNonMeleeSpellCast(false))
+            InterruptNonMeleeSpells(false);
+#endif
+
         AddEnchantmentDurations(pItem);
         AddItemDurations(pItem);
 
@@ -11032,7 +11029,7 @@ Item* Player::EquipItem(uint16 pos, Item *pItem, bool update)
 
                 _ApplyItemMods(pItem, slot, true);
 
-                if(pProto && IsInCombat()&& pProto->Class == ITEM_CLASS_WEAPON && m_weaponChangeTimer == 0)
+                if(IsInCombat()&& pProto->Class == ITEM_CLASS_WEAPON && m_weaponChangeTimer == 0)
                 {
                     uint32 cooldownSpell = SPELL_ID_WEAPON_SWITCH_COOLDOWN_1_5s;
 
@@ -11371,8 +11368,8 @@ void Player::DestroyItem(uint8 bag, uint8 slot, bool update)
         }
 
 
-        if (pItem->GetEntry() == 31088)      // Vashj Tainted Core
-            SetMovement(MOVE_UNROOT);
+        if (pItem->GetEntry() == 31088)      // HACK: Vashj Tainted Core
+            SetRooted(false);
 
         if(pItem->HasFlag(ITEM_FIELD_FLAGS, ITEM_FIELD_FLAG_WRAPPED))
             CharacterDatabase.PExecute("DELETE FROM character_gifts WHERE item_guid = '%u'", pItem->GetGUID().GetCounter());
@@ -12178,7 +12175,7 @@ void Player::RemoveItemFromBuyBackSlot(uint32 slot, bool del)
     }
 }
 
-void Player::SendEquipError(uint8 msg, Item* pItem, Item* pItem2 /*= nullptr*/, uint32 /*itemid*/ /*= 0*/) const
+void Player::SendEquipError(uint8 msg, Item* pItem, Item* pItem2 /*= nullptr*/, uint32 itemid /*= 0*/) const
 {
     WorldPacket data(SMSG_INVENTORY_CHANGE_FAILURE, (msg == EQUIP_ERR_CANT_EQUIP_LEVEL_I ? 22 : (msg == EQUIP_ERR_OK ? 1 : 18)));
     data << uint8(msg);
@@ -12192,12 +12189,25 @@ void Player::SendEquipError(uint8 msg, Item* pItem, Item* pItem2 /*= nullptr*/, 
         switch(msg)
         {
         case EQUIP_ERR_CANT_EQUIP_LEVEL_I:
-            uint32 level = 0;
-            if(pItem)
-                if(ItemTemplate const* proto =  pItem->GetTemplate())
-                    level = proto->RequiredLevel;
-
-            data << uint32(level);                          // new 2.4.0
+#ifdef LICH_KING
+        case EQUIP_ERR_PURCHASE_LEVEL_TOO_LOW:
+#endif
+        {
+            ItemTemplate const* proto = pItem ? pItem->GetTemplate() : sObjectMgr->GetItemTemplate(itemid);
+            data << uint32(proto ? proto->RequiredLevel : 0);
+            break;
+        }
+#ifdef LICH_KING
+        case EQUIP_ERR_ITEM_MAX_LIMIT_CATEGORY_COUNT_EXCEEDED:
+        case EQUIP_ERR_ITEM_MAX_LIMIT_CATEGORY_SOCKETED_EXCEEDED:
+        case EQUIP_ERR_ITEM_MAX_LIMIT_CATEGORY_EQUIPPED_EXCEEDED:
+        {
+            ItemTemplate const* proto = pItem ? pItem->GetTemplate() : sObjectMgr->GetItemTemplate(itemid);
+            data << uint32(proto ? proto->ItemLimitCategory : 0);
+            break;
+        }  
+#endif
+        default:
             break;
         }
     }
@@ -12256,7 +12266,7 @@ void Player::UpdateItemDuration(uint32 time, bool realtimeonly)
         Item* item = *itr;
         ++itr;                                              // current element can be erased in UpdateDuration
 
-        if (realtimeonly && (item->GetTemplate()->Duration < 0 || !realtimeonly))
+        if (realtimeonly && (item->GetTemplate()->Duration < 0))
             item->UpdateDuration(this,time);
     }
 }
@@ -14606,15 +14616,14 @@ void Player::SendQuestConfirmAccept(const Quest* pQuest, Player* pReceiver)
         std::string strTitle = pQuest->GetTitle();
 
         LocaleConstant loc_idx = pReceiver->GetSession()->GetSessionDbcLocale();
-
-        if (loc_idx >= 0) {
-            if (const QuestLocale* pLocale = sObjectMgr->GetQuestLocale(pQuest->GetQuestId())) {
+        if (loc_idx != DEFAULT_LOCALE)
+        {
+            if (QuestLocale const* pLocale = sObjectMgr->GetQuestLocale(pQuest->GetQuestId()))
                 if (pLocale->Title.size() > loc_idx && !pLocale->Title[loc_idx].empty())
                     strTitle = pLocale->Title[loc_idx];
-            }
         }
 
-        WorldPacket data(SMSG_QUEST_CONFIRM_ACCEPT, (4 + strTitle.size() + 8));
+        WorldPacket data(SMSG_QUEST_CONFIRM_ACCEPT, (4 + strTitle.size() + 8)); // LK OK
         data << uint32(pQuest->GetQuestId());
         data << strTitle;
         data << uint64(GetGUID());
@@ -16146,7 +16155,7 @@ void Player::LoadPet()
     // just not added to the map
     if(IsInWorld())
     {
-        auto pet = new Pet(this);
+        Pet* pet = new Pet(this);
         if(!pet->LoadPetFromDB(this,0,0,true))
             delete pet;
     }
@@ -16213,13 +16222,9 @@ void Player::_LoadQuestStatus(PreparedQueryResult result)
                 questStatusData.uState = QUEST_UNCHANGED;
 
                 // add to quest log
-                if( slot < MAX_QUEST_LOG_SIZE &&
-                    ( questStatusData.Status == QUEST_STATUS_INCOMPLETE ||
-                    (questStatusData.Status == QUEST_STATUS_COMPLETE &&
-                    (!questStatusData.Rewarded || pQuest->IsDaily())) )
-                  )
+                if (slot < MAX_QUEST_LOG_SIZE && questStatusData.Status != QUEST_STATUS_NONE)
                 {
-                    SetQuestSlot(slot,quest_id,quest_time);
+                    SetQuestSlot(slot, quest_id, uint32(quest_time)); // cast can't be helped
 
                     if(questStatusData.Status == QUEST_STATUS_COMPLETE)
                         SetQuestSlotState(slot,QUEST_STATE_COMPLETE);
@@ -17230,7 +17235,6 @@ void Player::_SaveInventory(SQLTransaction trans)
 
     // do not save if the update queue is corrupt
     bool error = false;
-    bool dup = false;
     for(auto item : m_itemUpdateQueue)
     {
         if(!item || item->GetState() == ITEM_REMOVED) continue;
@@ -17240,7 +17244,6 @@ void Player::_SaveInventory(SQLTransaction trans)
         {
             TC_LOG_ERROR("entities.player","POSSIBLE ITEM DUPLICATION ATTEMPT: Player(GUID: %u Name: %s)::_SaveInventory - the bag(%d) and slot(%d) values for the item with guid %d are incorrect, the player doesn't have an item at that position!", GetGUID().GetCounter(), GetName().c_str(), item->GetBagSlot(), item->GetSlot(), item->GetGUID().GetCounter());
             error = true;
-            //dup = true;
         }
         else if (test != item)
         {
@@ -17254,16 +17257,6 @@ void Player::_SaveInventory(SQLTransaction trans)
         TC_LOG_ERROR("entities.player","Player::_SaveInventory - one or more errors occurred save aborted!");
         ChatHandler(this).SendSysMessage(LANG_ITEM_SAVE_FAILED);
         m_itemUpdateQueue.clear();
-        if (dup) {
-            std::string banuname;
-            QueryResult result = LoginDatabase.PQuery("SELECT username FROM account WHERE id = '%u'", m_session->GetAccountId());
-            if (result) {
-                Field* fields = result->Fetch();
-                banuname = fields[0].GetString();
-                sWorld->BanAccount(SANCTION_BAN_ACCOUNT, banuname, "0", "auto ban on dupe", "Internal check", nullptr);
-            }
-        }
-
         return;
     }
 
@@ -17883,7 +17876,7 @@ Pet* Player::GetPet() const
 
 Pet* Player::SummonPet(uint32 entry, float x, float y, float z, float ang, PetType petType, uint32 duration)
 {
-    auto pet = new Pet(this, petType);
+    Pet* pet = new Pet(this, petType);
 
     if (petType == SUMMON_PET && pet->LoadPetFromDB(this, entry))
     {
@@ -18305,7 +18298,7 @@ void Player::CharmSpellInitialize()
     size_t spellsCountPos = data.wpos();
     uint8 addlist = 0;
     data << uint8(addlist);                             //placeholder
-    for(uint32 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+    for(uint32 i = 0; i < MAX_SPELL_CHARM; ++i)
     {
         CharmSpellInfo* cspell = charmInfo->GetCharmSpell(i);
         if (cspell->GetAction())
@@ -19470,7 +19463,7 @@ bool Player::CanNeverSee(WorldObject const* obj) const
 bool Player::CanAlwaysSee(WorldObject const* obj) const
 {
     // Always can see self
-    if (m_unitMovedByMe == obj)
+    if (GetSession()->GetActiveMover() == obj)
         return true;
 
     if (ObjectGuid guid = GetGuidValue(PLAYER_FARSIGHT))
@@ -19806,7 +19799,7 @@ void Player::SendComboPoints()
     if (combotarget)
     {
         WorldPacket data;
-        if (m_unitMovedByMe != this)
+        if (GetSession()->GetActiveMover() != this)
             return; //no combo point from pet/charmed creatures
 
         data.Initialize(SMSG_UPDATE_COMBO_POINTS, combotarget->GetPackGUID().size() + 1);
@@ -19865,7 +19858,7 @@ void Player::SendInitialPacketsBeforeAddToMap()
     if(HasAuraType(SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED) || IsInFlight())
         AddUnitMovementFlag(MOVEMENTFLAG_PLAYER_FLYING);
 
-    SetMovedUnit(this);
+    GetSession()->InitActiveMover(this);
 }
 
 void Player::SendInitialPacketsAfterAddToMap()
@@ -19877,8 +19870,8 @@ void Player::SendInitialPacketsAfterAddToMap()
     GetZoneAndAreaId(newzone, newarea);
     UpdateZone(newzone, newarea);                            // also call SendInitWorldStates();
 
-    ResetTimeSync();
-    SendTimeSync();
+    GetSession()->ResetTimeSync();
+    GetSession()->SendTimeSync();
 
     CastSpell(this, 836, true);                             // LOGINEFFECT
 
@@ -19899,16 +19892,11 @@ void Player::SendInitialPacketsAfterAddToMap()
     }
 
     if(HasAuraType(SPELL_AURA_MOD_STUN))
-        SetMovement(MOVE_ROOT);
+        SetRooted(true);
 
     // manual send package (have code in HandleEffect(true,true); that don't must be re-applied.
     if(HasAuraType(SPELL_AURA_MOD_ROOT))
-    {
-        WorldPacket data(SMSG_FORCE_MOVE_ROOT, 8 + 4);
-        data << GetPackGUID();
-        data << uint32(2);
-        SendMessageToSet(&data,true);
-    }
+        SetRooted(true);
 
     //SendAurasForTarget(this);
     SendEnchantmentDurations();                             // must be after add to map
@@ -20019,9 +20007,9 @@ void Player::SendInstanceResetWarning(uint32 mapid, uint32 time)
     uint32 type;
     if(time > 3600)
         type = RAID_INSTANCE_WELCOME;
-    else if(time > 900 && time <= 3600)
+    else if(time > 900)
         type = RAID_INSTANCE_WARNING_HOURS;
-    else if(time > 300 && time <= 900)
+    else if(time > 300)
         type = RAID_INSTANCE_WARNING_MIN;
     else
         type = RAID_INSTANCE_WARNING_MIN_SOON;
@@ -20725,13 +20713,13 @@ void Player::SendAuraDurationsForTarget(Unit* target)
     These movement packets are usually found in SMSG_COMPRESSED_MOVES
     */
     if (target->HasAuraType(SPELL_AURA_FEATHER_FALL))
-        target->SetFeatherFall(true, true);
+        target->SetFeatherFall(true);
 
     if (target->HasAuraType(SPELL_AURA_WATER_WALK))
-        target->SetWaterWalking(true, true);
+        target->SetWaterWalking(true);
 
     if (target->HasAuraType(SPELL_AURA_HOVER))
-        target->SetHover(true, true);
+        target->SetHover(true);
 
 #ifdef LICH_KING
     WorldPacket data(SMSG_AURA_UPDATE_ALL);
@@ -21477,24 +21465,6 @@ void Player::RessurectUsingRequestData()
     SpawnCorpseBones();
 }
 
-void Player::SetClientControl(Unit* target, uint8 allowMove)
-{
-    // still affected by some aura that shouldn't allow control, only allow on last such aura to be removed
-    if (allowMove && target->HasUnitState(UNIT_STATE_CANT_CLIENT_CONTROL))
-        return;
-
-    WorldPacket data(SMSG_CLIENT_CONTROL_UPDATE, target->GetPackGUID().size()+1);
-    data << target->GetPackGUID();
-    data << uint8(allowMove);
-    SendDirectMessage(&data);
-
-    if (this != target)
-        SetViewpoint(target, allowMove);
-
-    if (allowMove)
-        SetMovedUnit(target);
-}
-
 void Player::UpdateZoneDependentAuras( uint32 newZone )
 {
     // remove new continent flight forms
@@ -21635,8 +21605,7 @@ int32 Player::CalculateCorpseReclaimDelay(bool load) const
                 count = MAX_DEATH_COUNT - 1;
         }
 
-        //time_t expected_time = corpse->GetGhostTime()+copseReclaimDelay[count];
-        time_t expected_time = m_deathTime + copseReclaimDelay[count];
+        time_t expected_time = corpse->GetGhostTime() + copseReclaimDelay[count];
         time_t now = GetMap()->GetGameTime();
 
         if (now >= expected_time)
@@ -22668,81 +22637,11 @@ void Player::UpdateArenaTitles()
     */
 }
 
-bool Player::SetFlying(bool apply, bool packetOnly /* = false */)
+void Player::SetFlying(bool apply)
 {
-    if (!apply)
-        SetFallInformation(0, GetPositionZ());
-
-    WorldPacket data(apply ? SMSG_MOVE_SET_CAN_FLY : SMSG_MOVE_UNSET_CAN_FLY, 12);
-    data << GetPackGUID();
-    data << uint32(0);          //! movement counter
-    SendDirectMessage(&data);
-
     GetSession()->anticheat->OnPlayerSetFlying(this, apply);
 
-    if (packetOnly || Unit::SetFlying(apply))
-    {
-        data.Initialize(MSG_MOVE_UPDATE_CAN_FLY, 64);
-        data << GetPackGUID();
-        BuildMovementPacket(&data);
-        SendMessageToSet(&data, false);
-    }
-    else
-        return false;
-
-    return true;
-}
-
-
-bool Player::SetHover(bool apply, bool packetOnly /*= false*/)
-{
-    if (!packetOnly && !Unit::SetHover(apply))
-        return false;
-
-    WorldPacket data(apply ? SMSG_MOVE_SET_HOVER : SMSG_MOVE_UNSET_HOVER, 12);
-    data << GetPackGUID();
-    data << uint32(0);          //! movement counter
-    SendDirectMessage(&data);
-
-    data.Initialize(MSG_MOVE_HOVER, 64);
-    data << GetPackGUID();
-    BuildMovementPacket(&data);
-    SendMessageToSet(&data, false);
-    return true;
-}
-
-bool Player::SetWaterWalking(bool apply, bool packetOnly /*= false*/)
-{
-    if (!packetOnly && !Unit::SetWaterWalking(apply))
-        return false;
-
-    WorldPacket data(apply ? SMSG_MOVE_WATER_WALK : SMSG_MOVE_LAND_WALK, 12);
-    data << GetPackGUID();
-    data << uint32(0);          //! movement counter
-    SendDirectMessage(&data);
-
-    data.Initialize(MSG_MOVE_WATER_WALK, 64);
-    data << GetPackGUID();
-    BuildMovementPacket(&data);
-    SendMessageToSet(&data, false);
-    return true;
-}
-
-bool Player::SetFeatherFall(bool apply, bool packetOnly /*= false*/)
-{
-    if (!packetOnly && !Unit::SetFeatherFall(apply))
-        return false;
-
-    WorldPacket data(apply ? SMSG_MOVE_FEATHER_FALL : SMSG_MOVE_NORMAL_FALL, 12);
-    data << GetPackGUID();
-    data << uint32(0);          //! movement counter
-    SendDirectMessage(&data);
-
-    data.Initialize(MSG_MOVE_FEATHER_FALL, 64);
-    data << GetPackGUID();
-    BuildMovementPacket(&data);
-    SendMessageToSet(&data, false);
-    return true;
+    Unit::SetFlying(apply);
 }
 
 void Player::ProcessDelayedOperations()
@@ -22812,30 +22711,16 @@ void Player::SetFallInformation(uint32 time, float z)
     m_lastFallZ = z;
 }
 
-void Player::SetMovedUnit(Unit* target)
-{
-    //if target is a player, notify anticheat
-    if (Player* targetPlayer = target->ToPlayer())
-        targetPlayer->GetSession()->anticheat->OnPlayerMoverChanged(targetPlayer->m_unitMovedByMe->m_playerMovingMe, this);
-    //also notify for ourselves
-    GetSession()->anticheat->OnPlayerMoverChanged(m_unitMovedByMe, target);
-
-    m_unitMovedByMe->m_playerMovingMe = nullptr;
-
-    m_unitMovedByMe = target;
-    m_unitMovedByMe->m_playerMovingMe = this;
-}
-
 void Player::SetViewpoint(WorldObject* target, bool apply)
 {
     if (apply)
     {
-        TC_LOG_DEBUG("maps", "Player::CreateViewpoint: Player '%s' (%s) creates seer (Entry: %u, TypeId: %u).",
+        TC_LOG_TRACE("entities.player", "Player::SetViewpoint: Player '%s' (%s) creates seer (Entry: %u, TypeId: %u).",
             GetName().c_str(), ObjectGuid(GetGUID()).ToString().c_str(), target->GetEntry(), target->GetTypeId());
 
         if (!AddGuidValue(PLAYER_FARSIGHT, target->GetGUID()))
         {
-            TC_LOG_FATAL("entities.player", "Player::CreateViewpoint: Player '%s' (%s) cannot add new viewpoint!", GetName().c_str(), ObjectGuid(GetGUID()).ToString().c_str());
+            TC_LOG_FATAL("entities.player", "Player::SetViewpoint: Player '%s' (%s) cannot add new viewpoint!", GetName().c_str(), ObjectGuid(GetGUID()).ToString().c_str());
             return;
         }
 
@@ -22853,11 +22738,11 @@ void Player::SetViewpoint(WorldObject* target, bool apply)
     }
     else
     {
-        TC_LOG_DEBUG("maps", "Player::CreateViewpoint: Player %s removed seer", GetName().c_str());
+        TC_LOG_TRACE("entities.player", "Player::SetViewpoint: Player %s removed seer", GetName().c_str());
 
         if (!RemoveGuidValue(PLAYER_FARSIGHT, target->GetGUID()))
         {
-            TC_LOG_FATAL("entities.player", "Player::CreateViewpoint: Player '%s' (%s) cannot remove current viewpoint!", GetName().c_str(), ObjectGuid(GetGUID()).ToString().c_str());
+            TC_LOG_FATAL("entities.player", "Player::SetViewpoint: Player '%s' (%s) cannot remove current viewpoint!", GetName().c_str(), ObjectGuid(GetGUID()).ToString().c_str());
             return;
         }
 
@@ -22909,42 +22794,6 @@ WorldObject* Player::GetViewpoint() const
     if (ObjectGuid guid = GetGuidValue(PLAYER_FARSIGHT))
         return static_cast<WorldObject*>(ObjectAccessor::GetObjectByTypeMask(*this, guid, TYPEMASK_SEER));
     return nullptr;
-}
-
-void Player::SendTeleportAckPacket()
-{
-    WorldPacket data(MSG_MOVE_TELEPORT_ACK, 41);
-    data << GetPackGUID();
-    data << uint32(0);                                     // this value increments every time
-    BuildMovementPacket(&data);
-    SendDirectMessage(&data);
-}
-
-bool Player::SetDisableGravity(bool disable, bool packetOnly /*= false*/)
-{
-    if (!packetOnly && !Unit::SetDisableGravity(disable))
-        return false;
-
-    return true;
-}
-
-void Player::ResetTimeSync()
-{
-    m_timeSyncCounter = 0;
-    m_timeSyncTimer = 0;
-    m_timeSyncClient = 0;
-    m_timeSyncServer = WorldGameTime::GetGameTimeMS();
-}
-
-void Player::SendTimeSync()
-{
-    WorldPacket data(SMSG_TIME_SYNC_REQ, 4);
-    data << uint32(m_timeSyncCounter++);
-    SendDirectMessage(&data);
-
-    // Schedule next sync in 10 sec
-    m_timeSyncTimer = 10000;
-    m_timeSyncServer = WorldGameTime::GetGameTimeMS();
 }
 
 void Player::ResummonPetTemporaryUnSummonedIfAny()
@@ -23030,11 +22879,12 @@ void Player::PrepareGossipMenu(WorldObject* source, uint32 menuId /*= 0*/, bool 
                     }
                     break;
                 }
-            /*  LK  case GOSSIP_OPTION_LEARNDUALSPEC:
-                    if (!(GetSpecsCount() == 1 && creature->isCanTrainingAndResetTalentsOf(this) && !(getLevel() < sWorld->getIntConfig(CONFIG_MIN_DUALSPEC_LEVEL))))
+#ifdef LICH_KING
+                case GOSSIP_OPTION_LEARNDUALSPEC:
+                    if (!(GetSpecsCount() == 1 && creature->isCanTrainingAndResetTalentsOf(this) && !(GetLevel() < sWorld->getIntConfig(CONFIG_MIN_DUALSPEC_LEVEL))))
                         canTalk = false;
                     break;
-                    */
+#endif
                 case GOSSIP_OPTION_UNLEARNTALENTS:
                     if (!creature->canResetTalentsOf(this))
                         canTalk = false;
@@ -23443,7 +23293,7 @@ bool Player::IsTestingBot() const
 #ifdef TESTS
     return GetTestingPlayerbotAI();
 #else
-    return nullptr;
+    return false;
 #endif
 }
 

@@ -2123,8 +2123,7 @@ public:
 
             SECTION("Statuses and flag", [&] {
                 TEST_ASSERT(enemy->IsPossessedByPlayer());
-                TEST_ASSERT(priest->GetPlayerBeingMoved() == enemy);
-                TEST_ASSERT(priest->GetUnitBeingMoved() == enemy);
+                TEST_ASSERT(priest->GetSession()->GetActiveMover() == enemy);
                 TEST_ASSERT(priest->GetViewpoint() == enemy);
                 TEST_ASSERT(enemy->HasUnitState(UNIT_STATE_POSSESSED));
                 TEST_ASSERT(enemy->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_POSSESSED));
@@ -2136,8 +2135,7 @@ public:
              
             SECTION("Unapply", [&] {
                 TEST_ASSERT(!enemy->IsPossessed());
-                TEST_ASSERT(priest->GetPlayerBeingMoved() == priest);
-                TEST_ASSERT(priest->GetUnitBeingMoved() == priest);
+                TEST_ASSERT(priest->GetSession()->GetActiveMover() == priest);
                 TEST_ASSERT(priest->GetViewpoint() == nullptr);
                 TEST_ASSERT(!enemy->HasUnitState(UNIT_STATE_POSSESSED));
                 TEST_ASSERT(!enemy->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_POSSESSED));
@@ -2245,8 +2243,6 @@ public:
     class MindVisionTestImpt : public TestCase
     {
     public:
-
-
         void Test() override
         {
             TestPlayer* priest = SpawnPlayer(CLASS_PRIEST, RACE_BLOODELF);
@@ -2326,8 +2322,6 @@ public:
     class PrayerOfShadowProtectionTestImpt : public TestCase
     {
     public:
-
-
         void TestPrayerOfShadowProtection(TestPlayer* priest, Unit* warrior, uint32 spellId, uint32 reagentId, uint32 manaCost, uint32 shadowResistanceBonus, uint32 priestStartShadowResistance, uint32 warriorStartShadowResistance)
         {
             uint32 expectedPriestSR = priestStartShadowResistance + shadowResistanceBonus;

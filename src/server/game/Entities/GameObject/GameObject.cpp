@@ -430,7 +430,10 @@ bool GameObject::Create(ObjectGuid::LowType guidlow, uint32 name_id, Map *map, u
 #endif
     case GAMEOBJECT_TYPE_FISHINGHOLE:
         SetGoAnimProgress(animprogress);
-        m_goValue.FishingHole.MaxOpens = urand(GetGOInfo()->fishinghole.minSuccessOpens, GetGOInfo()->fishinghole.maxSuccessOpens);
+        if (GetGOInfo()->fishinghole.maxSuccessOpens) //one gob has no max
+            m_goValue.FishingHole.MaxOpens = urand(GetGOInfo()->fishinghole.minSuccessOpens, GetGOInfo()->fishinghole.maxSuccessOpens);
+        else
+            m_goValue.FishingHole.MaxOpens = GetGOInfo()->fishinghole.minSuccessOpens;
         break;
     case GAMEOBJECT_TYPE_TRAP:
         if (GetGOInfo()->trap.stealthed)
@@ -457,14 +460,6 @@ bool GameObject::Create(ObjectGuid::LowType guidlow, uint32 name_id, Map *map, u
     if (goinfo->type == GAMEOBJECT_TYPE_SPELLCASTER)
         m_charges = goinfo->GetCharges();
 
-    //Notify the map's instance data.
-    //Only works if you create the object in it, not if it is moves to that map.
-    //Normally non-players do not teleport to other maps.
-    if(map->IsDungeon() && ((InstanceMap*)map)->GetInstanceScript())
-    {
-        ((InstanceMap*)map)->GetInstanceScript()->OnGameObjectCreate(this);
-    }
-    
     LastUsedScriptID = GetScriptId();
     AIM_Initialize();
 
@@ -2118,7 +2113,7 @@ uint32 GameObject::GetScriptId() const
 // overwrite WorldObject function for proper name localization
 std::string const& GameObject::GetNameForLocaleIdx(LocaleConstant loc_idx) const
 {
-    if (loc_idx >= 0)
+    if (loc_idx != DEFAULT_LOCALE)
     {
         GameObjectLocale const *cl = sObjectMgr->GetGameObjectLocale(GetEntry());
         if (cl)

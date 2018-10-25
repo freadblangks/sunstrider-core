@@ -153,7 +153,6 @@ Battleground::Battleground()
     m_score[TEAM_HORDE]    = 0;
 
     m_PrematureCountDown = false;
-    m_PrematureCountDown = 0;
     m_timeLimit = 0;
 
     m_HonorMode = BG_NORMAL;
@@ -862,13 +861,13 @@ void Battleground::SetStatus(BattlegroundStatus Status)
 
 void Battleground::RewardMark(Player* plr, uint32 count)
 {
-    // 'Inactive' this aura prevents the player from gaining honor points and battleground tokens
-    if(plr->GetDummyAura(SPELL_AURA_PLAYER_INACTIVE))
-        return;
-
     if(!plr || !count)
         return;
-   
+
+    // 'Inactive' this aura prevents the player from gaining honor points and battleground tokens
+    if (plr->GetDummyAura(SPELL_AURA_PLAYER_INACTIVE))
+        return;
+
     // Give less marks if the player has been disconnected during the battleground
     auto itr = m_Players.find(plr->GetGUID());
     if (itr != m_Players.end())
@@ -990,7 +989,7 @@ void Battleground::RewardQuest(Player *plr)
 
 void Battleground::BlockMovement(Player *plr)
 {
-    plr->SetClientControl(plr, 0);                          // movement disabled NOTE: the effect will be automatically removed by client when the player is teleported from the battleground, so no need to send with uint8(1) in RemovePlayerAtLeave()
+    plr->GetSession()->SetClientControl(plr, false);                          // movement disabled NOTE: the effect will be automatically removed by client when the player is teleported from the battleground, so no need to send with uint8(1) in RemovePlayerAtLeave()
 }
 
 void Battleground::RemovePlayerAtLeave(ObjectGuid guid, bool Transport, bool SendPacket)

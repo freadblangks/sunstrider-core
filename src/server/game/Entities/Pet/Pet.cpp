@@ -52,7 +52,7 @@ uint32 const LevelStartLoyalty[6] =
 Pet::Pet(Player* owner, PetType type) 
     : Guardian(NULL, owner, true),
     m_removed(false),
-    m_regenTimer(4000), 
+    m_regenFocusTimer(4000),
     m_loading(false)
 {
     m_unitTypeMask |= UNIT_MASK_PET;
@@ -205,17 +205,17 @@ bool Pet::LoadPetFromDB(Player* owner, uint32 petentry, uint32 petnumber, bool c
         target = owner->ToPlayer()->GetVictim();
         if (target && _CanCreatureAttack(target) == CAN_ATTACK_RESULT_OK)
         {
-            target->GetClosePoint(px, py, pz, PET_FOLLOW_DIST, this->GetFollowAngle());
+            target->GetClosePoint(px, py, pz, GetCombatReach(), PET_FOLLOW_DIST, this->GetFollowAngle());
             UpdateAllowedPositionZ(px, py, pz); //prevent it spawning on flying targets
         }
         else {
             //spawn at owner instead
-            owner->GetClosePoint(px, py, pz, PET_FOLLOW_DIST, this->GetFollowAngle());
+            owner->GetClosePoint(px, py, pz, GetCombatReach(), PET_FOLLOW_DIST, this->GetFollowAngle());
             target = nullptr;
         }
     }
     else
-        owner->GetClosePoint(px, py, pz, PET_FOLLOW_DIST, this->GetFollowAngle());
+        owner->GetClosePoint(px, py, pz, GetCombatReach(), PET_FOLLOW_DIST, this->GetFollowAngle());
 
     Relocate(px, py, pz, owner->GetOrientation());
 
@@ -234,7 +234,7 @@ bool Pet::LoadPetFromDB(Player* owner, uint32 petentry, uint32 petnumber, bool c
     {
         AIM_Initialize();
         float x, y, z;
-        owner->GetClosePoint(x, y, z, PET_FOLLOW_DIST, GetFollowAngle());
+        owner->GetClosePoint(x, y, z, GetCombatReach(), PET_FOLLOW_DIST, GetFollowAngle());
         Relocate(x, y, z, owner->GetOrientation());
 
         if (!IsPositionValid())
@@ -651,13 +651,13 @@ void Pet::Update(uint32 diff)
                 break;
 
             //regenerate Focus
-            if(m_regenTimer <= diff)
+            if(m_regenFocusTimer <= diff)
             {
                 Regenerate(POWER_FOCUS);
-                m_regenTimer = PET_FOCUS_REGEN_INTERVAL;
+                m_regenFocusTimer = PET_FOCUS_REGEN_INTERVAL;
             }
             else
-                m_regenTimer -= diff;
+                m_regenFocusTimer -= diff;
 
             //don't loose happiness for arena server
             if(!sWorld->getConfig(CONFIG_ARENASERVER_ENABLED))
