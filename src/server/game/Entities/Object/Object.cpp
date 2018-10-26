@@ -2027,7 +2027,7 @@ Player* WorldObject::SelectNearestPlayer(float distance, bool alive) const
     return target;
 }
 
-void WorldObject::GetNearPoint2D(WorldObject const* searcher, float &x, float &y, float distance2d, float absAngle ) const
+void WorldObject::GetNearPoint2D(WorldObject const* searcher, float &x, float &y, float distance2d, float absAngle) const
 {
     x = GetPositionX() + (GetCombatReach() + distance2d) * cos(absAngle);
     y = GetPositionY() + (GetCombatReach() + distance2d) * sin(absAngle);
@@ -2060,7 +2060,7 @@ void WorldObject::GetNearPoint(WorldObject const* searcher, float &x, float &y, 
     {
         GetNearPoint2D(searcher, x, y, distance2d, absAngle + angle);
         z = GetPositionZ();
-        (searcher ? searcher : this)->UpdateAllowedPositionZ(x, y, z);
+        (searcher ? searcher : this)->UpdateAllowedPositionZ(x, y, z, distance2d * 2); //sun: added max dist
         if (IsWithinLOS(x, y, z))
             return;
     }
