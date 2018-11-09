@@ -260,6 +260,7 @@ Unit::Unit(bool isWorldObject)
     m_AutoRepeatFirstCast(false),
     m_reactiveTimer(), 
     m_charmInfo(nullptr),
+    m_aiLocked(false),
     collisionHeight(DEFAULT_COLLISION_HEIGHT)
 {
     m_objectType |= TYPEMASK_UNIT;
@@ -6926,6 +6927,13 @@ void Unit::AttackedTarget(Unit* target, bool canInitialAggro)
     if (Unit* targetOwner = target->GetCharmerOrOwner())
         targetOwner->EngageWithTarget(this);
 
+#ifdef LICH_KING
+    //Patch 3.0.8: All player spells which cause a creature to become aggressive to you will now also immediately cause the creature to be tapped.
+    if (Creature* creature = target->ToCreature())
+        if (!creature->hasLootRecipient() && GetTypeId() == TYPEID_PLAYER)
+            creature->SetLootRecipient(this);
+#endif
+
     Player* myPlayerOwner = GetCharmerOrOwnerPlayerOrPlayerItself();
     Player* targetPlayerOwner = target->GetCharmerOrOwnerPlayerOrPlayerItself();
     if (myPlayerOwner && targetPlayerOwner && !(myPlayerOwner->duel && myPlayerOwner->duel->Opponent == targetPlayerOwner))
@@ -7501,7 +7509,7 @@ void Unit::UpdateSpeed(UnitMoveType mtype)
     float oldSpeed = GetSpeedRate(mtype);
     SetSpeedRate(mtype, speed);
     if (Player* p = ToPlayer())
-        p->GetSession()->anticheat->OnPlayerSpeedChanged(p, oldSpeed, speed);
+        p->GetSession()->anticheat.OnPlayerSpeedChanged(p, oldSpeed, speed);
 }
 
 /* return true speed */
@@ -8398,24 +8406,27 @@ uint32 Unit::GetCreatePowers( Powers power ) const
     return 0;
 }
 
-void Unit::AIUpdateTick(uint32 diff, bool /*force*/)
+void Unit::AIUpdateTick(uint32 diff)
 {
     if (!diff) // some places call with diff = 0, which does nothing (for now), see PR #22296
         return;
     if (UnitAI* ai = GetAI())
+    {
+        m_aiLocked = true;
         ai->UpdateAI(diff);
+        m_aiLocked = false;
+    }
 }
 
 void Unit::SetAI(UnitAI* newAI)
 {
-    if (i_AI)
-        AIUpdateTick(0, true); // old AI gets a final tick if enabled
+    ASSERT(!m_aiLocked, "Attempt to replace AI during AI update tick");
     i_AI.reset(newAI);
-    AIUpdateTick(0, true); // new AI gets its initial tick
 }
 
 void Unit::ScheduleAIChange()
 {
+    ASSERT(!m_aiLocked, "Attempt to schedule AI change during AI update tick");
     bool const charmed = IsCharmed();
     // if charm is applied, we can't have disabled AI already, and vice versa
     if (charmed)
@@ -8430,10 +8441,10 @@ void Unit::ScheduleAIChange()
 
 void Unit::RestoreDisabledAI()
 {
+    ASSERT(!m_aiLocked, "Attempt to restore AI during UpdateAI tick");
     ASSERT((GetTypeId() == TYPEID_PLAYER) || i_disabledAI, "Attempt to restore disabled AI on creature without disabled AI");
 
     i_AI = std::move(i_disabledAI);
-    AIUpdateTick(0, true);
 }
 
 void Unit::UpdateResistanceBuffModsMod(SpellSchools school)
@@ -8667,7 +8678,6 @@ void Unit::UpdateCharmAI()
         ASSERT(newAI);
         i_AI.reset(newAI);
         newAI->OnCharmed(true);
-        AIUpdateTick(0, true);
     }
     else
     {
@@ -10022,11 +10032,8 @@ void Unit::SetFeared(bool apply)
     }
 
     // block / allow control to real player in control (eg charmer)
-    if (GetTypeId() == TYPEID_PLAYER)
-    {
-        if (m_playerMovingMe)
-            m_playerMovingMe->SetClientControl(this, !apply);
-    }
+    if (GetTypeId() == TYPEID_PLAYER && m_playerMovingMe)
+        m_playerMovingMe->SuppressMover(this, apply);
 }
 
 void Unit::SetConfused(bool apply)
@@ -10049,11 +10056,8 @@ void Unit::SetConfused(bool apply)
     }
 
     // block / allow control to real player in control (eg charmer)
-    if (GetTypeId() == TYPEID_PLAYER)
-    {
-        if (m_playerMovingMe)
-            m_playerMovingMe->SetClientControl(this, !apply);
-    }
+    if (GetTypeId() == TYPEID_PLAYER && m_playerMovingMe)
+        m_playerMovingMe->SuppressMover(this, apply);
 }
 
 bool Unit::SetCharmedBy(Unit* charmer, CharmType type, AuraApplication const* aurApp /*= nullptr*/)
@@ -10154,7 +10158,7 @@ bool Unit::SetCharmedBy(Unit* charmer, CharmType type, AuraApplication const* au
         if (player->IsAFK())
             player->ToggleAFK();
 
-        player->GetSession()->SetClientControl(this, false);
+        player->GetSession()->GetClientControl().DisallowTakeControl(this);
     }
 
     // charm is set by aura, and aura effect remove handler was called during apply handler execution
@@ -10186,7 +10190,7 @@ bool Unit::SetCharmedBy(Unit* charmer, CharmType type, AuraApplication const* au
             case CHARM_TYPE_POSSESS:
                 SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_POSSESSED);
                 charmer->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_REMOVE_CLIENT_CONTROL);
-                playerCharmer->GetSession()->SetClientControl(this, true);
+                playerCharmer->GetSession()->GetClientControl().AllowTakeControl(this, true);
                 playerCharmer->PossessSpellInitialize();
                 AddUnitState(UNIT_STATE_POSSESSED);
                 break;
@@ -10303,8 +10307,7 @@ void Unit::RemoveCharmedBy(Unit* charmer)
 #endif
         case CHARM_TYPE_POSSESS:
             ClearUnitState(UNIT_STATE_POSSESSED);
-            playerCharmer->GetSession()->SetClientControl(this, false);
-            playerCharmer->GetSession()->SetClientControl(charmer, true);
+            playerCharmer->GetSession()->GetClientControl().DisallowTakeControl(this);
             charmer->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_REMOVE_CLIENT_CONTROL);
             RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_POSSESSED);
             break;
@@ -10342,7 +10345,7 @@ void Unit::RemoveCharmedBy(Unit* charmer)
     }
 
     if (Player* player = ToPlayer())
-        player->GetSession()->SetClientControl(this, true);
+        player->GetSession()->GetClientControl().AllowTakeControl(this, false);
 
     // reset confused movement for example
     ApplyControlStatesIfNeeded();
@@ -10906,7 +10909,7 @@ void Unit::SetWaterWalking(bool apply)
         MovementPacketSender::SendMovementFlagChangeToAll(this, MOVEMENTFLAG_WATERWALKING, apply);
     }
     if (Player* p = ToPlayer())
-        p->GetSession()->anticheat->OnPlayerWaterWalk(p);
+        p->GetSession()->anticheat.OnPlayerWaterWalk(p);
 }
 
 void Unit::SetWaterWalkingReal(bool apply)
@@ -10933,7 +10936,7 @@ void Unit::SetFeatherFall(bool apply)
         MovementPacketSender::SendMovementFlagChangeToAll(this, MOVEMENTFLAG_FALLING_SLOW, apply);
     }
     if (Player* p = ToPlayer())
-        p->GetSession()->anticheat->OnPlayerSlowfall(p);
+        p->GetSession()->anticheat.OnPlayerSlowfall(p);
 }
 
 void Unit::SetFeatherFallReal(bool apply)
@@ -10962,7 +10965,7 @@ void Unit::SetHover(bool apply)
     }
 
     if (Player* p = ToPlayer())
-        p->GetSession()->anticheat->OnPlayerSlowfall(p);
+        p->GetSession()->anticheat.OnPlayerSlowfall(p);
 }
 
 void Unit::SetHoverReal(bool apply)
@@ -11328,20 +11331,20 @@ void Unit::ValidateMovementInfo(MovementInfo* mi)
         { \
             TC_LOG_INFO("cheat", "Unit::ValidateMovementInfo: A violation has been detected (%s) for player %s (lowguid: %u) moving unit %s (GUID: %s). The player will be kicked." \
                 " Data from client: MovementFlags: %u, MovementFlags2: %u. Data in the server: MovementFlags: %u, MovementFlags2: %u.", \
-                STRINGIZE(check), GetPlayerMovingMe()->GetPlayer()->GetName().c_str(), GetPlayerMovingMe()->GetPlayer()->GetGUID().GetCounter(), \
+                STRINGIZE(check), GetPlayerMovingMe()->GetSession()->GetPlayer()->GetName().c_str(), GetPlayerMovingMe()->GetSession()->GetPlayer()->GetGUID().GetCounter(), \
                             GetName().c_str(), GetGUID().ToString().c_str(), mi->GetMovementFlags(), mi->GetExtraMovementFlags(), \
                             GetMovementInfo().GetMovementFlags(), GetMovementInfo().GetExtraMovementFlags()); \
-            GetPlayerMovingMe()->KickPlayer(); \
+            GetPlayerMovingMe()->GetSession()->KickPlayer(); \
             return; \
         } \
     }
 #else
     #define CHECK_FOR_VIOLATING_FLAGS(check) \
-                        if (check) \
-                        { \
-                            GetPlayerMovingMe()->KickPlayer(); \
-                            return; \
-                        } \
+        if (check) \
+        { \
+            GetPlayerMovingMe()->GetSession()->KickPlayer(); \
+            return; \
+        } \
 
 #endif 
 
@@ -11426,12 +11429,12 @@ void Unit::UpdateMovementInfo(MovementInfo movementInfo)
     }
 
     //We received the client time but need to send the movement with server time to other players
-    WorldSession* playerSession = GetPlayerMovingMe();
+    ClientControl* playerSession = GetPlayerMovingMe();
     playerSession->SetLastMoveClientTimestamp(movementInfo.time); // Needed for speed cheat detection
     playerSession->SetLastMoveServerTimestamp(GetMap()->GetGameTimeMS());
      
     uint32 const STATIC_DELAY = 100;
-    int64 movementTime = (int64)movementInfo.time + playerSession->m_timeSyncClockDelta;
+    int64 movementTime = (int64)movementInfo.time + playerSession->GetSession()->m_timeSyncClockDelta;
     if (movementTime < 0 || movementTime > 0xFFFFFFFF)
     {
         TC_LOG_WARN("movement", "The computed movement time using clockDelta is erronous. Using fallback instead");

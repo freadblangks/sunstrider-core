@@ -4,7 +4,6 @@
 #include "Common.h"
 #include "Object.h"
 #include "Opcodes.h"
-#include "Mthread.h"
 #include "SpellAuraDefines.h"
 #include "UpdateFields.h"
 #include "SharedDefines.h"
@@ -48,6 +47,7 @@ class SpellHistory;
 enum MovementGeneratorType : uint8;
 struct ChaseRange;
 class WorldSession;
+class ClientControl;
 
 #define WORLD_TRIGGER   12999
 
@@ -835,7 +835,7 @@ class TC_GAME_API Unit : public WorldObject
         void CleanupsBeforeDelete(bool finalCleanup = true) override;  // used in ~Creature/~Player (or before mass creature delete to remove cross-references to already deleted units)
 
         bool IsAIEnabled() const { return (i_AI != nullptr); }
-        void AIUpdateTick(uint32 diff, bool force = false);
+        void AIUpdateTick(uint32 diff);
         UnitAI* GetAI() const { return i_AI.get(); }
         void SetAI(UnitAI* newAI);
         void ScheduleAIChange();
@@ -1298,9 +1298,9 @@ class TC_GAME_API Unit : public WorldObject
         void       DeleteCharmInfo();
 
         // returns the player that this unit is BEING CONTROLLED BY
-        WorldSession* GetPlayerMovingMe() const { return m_playerMovingMe; }
+        ClientControl* GetPlayerMovingMe() const { return m_playerMovingMe; }
         // only set for direct client control (possess effects, vehicles and similar)
-        WorldSession* m_playerMovingMe;
+        ClientControl* m_playerMovingMe;
         // reflects direct client control (examples: a player MC another player or a creature (possess effects). a player takes control of a vehicle. etc...)
         bool IsMovedByPlayer() const { return m_playerMovingMe != nullptr; }
         SharedVisionList const& GetSharedVisionList() { return m_sharedVision; }
@@ -2009,6 +2009,7 @@ class TC_GAME_API Unit : public WorldObject
         void UpdateCharmAI();
         void RestoreDisabledAI();
         std::unique_ptr<UnitAI> i_AI, i_disabledAI;
+        bool m_aiLocked;
 
         std::unordered_set<AbstractFollower*> m_followingMe;
 
