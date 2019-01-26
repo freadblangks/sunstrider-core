@@ -71,6 +71,8 @@
 #include "ReputationMgr.h"
 #include "Trainer.h"
 #include "PoolMgr.h"
+#include "WorldStatePackets.h"
+#include "TicketMgr.h"
 
 #ifdef PLAYERBOT
 #include "PlayerbotAI.h"
@@ -357,7 +359,6 @@ Player::Player(WorldSession *session) :
     m_isXpBlocked = false;
 
     m_kickatnextupdate = false;
-    m_swdBackfireDmg = 0;
 
     m_ConditionErrorMsgId = 0;
 
@@ -3017,7 +3018,7 @@ void Player::InitStatsForLevel(bool reapplyMods)
     SetFloatValue(PLAYER_RANGED_CRIT_PERCENTAGE,0.0f);
 
     // Init spell schools (will be recalculated in UpdateAllStats() at loading and in _ApplyAllStatBonuses() at reset
-    for (uint8 i = 0; i < 7; ++i)
+    for (int i = SPELL_SCHOOL_NORMAL; i < MAX_SPELL_SCHOOL; i++)
         SetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1+i, 0.0f);
 
     SetFloatValue(PLAYER_PARRY_PERCENTAGE, 0.0f);
@@ -3051,7 +3052,7 @@ void Player::InitStatsForLevel(bool reapplyMods)
 
     // save new stats
     for (int i = POWER_MANA; i < MAX_POWERS; i++)
-        SetMaxPower(Powers(i),  uint32(GetCreatePowers(Powers(i))));
+        SetMaxPower(Powers(i),  uint32(GetCreatePowerValue(Powers(i))));
 
     SetMaxHealth(classInfo.basehealth);                     // stamina bonus will applied later
 
@@ -3718,9 +3719,11 @@ void Player::RemoveSpell(uint32 spell_id, bool disabled, bool learn_low_rank)
     bool cur_dependent = itr->second->dependent;
 
     // removing
-    WorldPacket data(SMSG_REMOVED_SPELL, 4);
-    data << uint16(spell_id);
-    SendDirectMessage(&data);
+    {
+        WorldPacket data(SMSG_REMOVED_SPELL, 4);
+        data << uint16(spell_id);
+        SendDirectMessage(&data);
+    }
 
     if (disabled)
     {
@@ -3747,7 +3750,7 @@ void Player::RemoveSpell(uint32 spell_id, bool disabled, bool learn_low_rank)
 
     // free talent points
     uint32 talentCosts = GetTalentSpellCost(spell_id);
-    if(talentCosts > 0)
+    if(talentCosts > 0 && giveTalentPoints)
     {
         if(talentCosts < m_usedTalentCount)
             m_usedTalentCount -= talentCosts;
@@ -4204,6 +4207,11 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
         if (Guild* guild = sGuildMgr->GetGuildById(guildId))
             guild->DeleteMember(trans, playerguid, false, false, true);
 
+    // close player ticket if any
+    GmTicket* ticket = sTicketMgr->GetTicketByPlayer(playerguid);
+    if (ticket)
+        sTicketMgr->CloseTicket(ticket->GetId(), playerguid);
+
     // remove from arena teams
     LeaveAllArenaTeams(playerguid);
 
@@ -4349,7 +4357,18 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
             stmt->setUInt32(0, guid);
             trans->Append(stmt);
 
-            trans->PAppend("DELETE FROM gm_tickets WHERE playerGuid = '%u'", guid);
+            if (sWorld->getBoolConfig(CONFIG_DELETE_CHARACTER_TICKET_TRACE))
+            {
+                stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_PLAYER_GM_TICKETS_ON_CHAR_DELETION);
+                stmt->setUInt32(0, guid);
+                trans->Append(stmt);
+            }
+            else
+            {
+                stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_PLAYER_GM_TICKETS);
+                stmt->setUInt32(0, guid);
+                trans->Append(stmt);
+            }
 
             stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_ITEM_INSTANCE_BY_OWNER);
             stmt->setUInt32(0, guid);
@@ -5288,38 +5307,6 @@ float Player::GetRatingBonusValue(CombatRating cr) const
 #else
     return float(GetUInt32Value(PLAYER_FIELD_COMBAT_RATING_1 + cr)) / GetRatingCoefficient(cr);
 #endif
-}
-
-uint32 Player::GetMeleeCritDamageReduction(uint32 damage) const
-{
-    float melee  = GetRatingBonusValue(CR_CRIT_TAKEN_MELEE)*2.0f;
-    if (melee>25.0f) melee = 25.0f;
-    return uint32 (melee * damage /100.0f);
-}
-
-uint32 Player::GetRangedCritDamageReduction(uint32 damage) const
-{
-    float ranged = GetRatingBonusValue(CR_CRIT_TAKEN_RANGED)*2.0f;
-    if (ranged>25.0f) ranged=25.0f;
-    return uint32 (ranged * damage /100.0f);
-}
-
-uint32 Player::GetSpellCritDamageReduction(uint32 damage) const
-{
-    float spell = GetRatingBonusValue(CR_CRIT_TAKEN_SPELL)*2.0f;
-    // In wow script resilience limited to 25%
-    if (spell>25.0f)
-        spell = 25.0f;
-    return uint32 (spell * damage / 100.0f);
-}
-
-uint32 Player::GetDotDamageReduction(uint32 damage) const
-{
-    float spellDot = GetRatingBonusValue(CR_CRIT_TAKEN_SPELL);
-    // Dot resilience not limited (limit it by 100%)
-    if (spellDot > 100.0f)
-        spellDot = 100.0f;
-    return uint32 (spellDot * damage / 100.0f);
 }
 
 float Player::GetExpertiseDodgeOrParryReduction(WeaponAttackType attType) const
@@ -8655,12 +8642,12 @@ void Player::SendNotifyLootItemRemoved(uint8 lootSlot)
     SendDirectMessage( &data );
 }
 
-void Player::SendUpdateWorldState(uint32 Field, uint32 Value)
+void Player::SendUpdateWorldState(uint32 variable, uint32 value) const
 {
-    WorldPacket data(SMSG_UPDATE_WORLD_STATE, 8);
-    data << Field;
-    data << Value;
-    SendDirectMessage(&data);
+	WorldPackets::WorldState::UpdateWorldState worldstate;
+	worldstate.VariableID = variable;
+	worldstate.Value = value;
+	SendDirectMessage(worldstate.Write());
 }
 
 void Player::SendInitWorldStates(uint32 zoneid, uint32 areaid)
@@ -14244,8 +14231,6 @@ bool Player::CanShareQuest(uint32 quest_id) const
 
 void Player::SetQuestStatus(uint32 questId, QuestStatus status, bool update /*= true*/)
 {
-    uint32 zone = 0, area = 0;
-
     if(Quest const* quest = sObjectMgr->GetQuestTemplate(questId))
     {
         if (status == QUEST_STATUS_NONE || status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_COMPLETE)
@@ -23401,16 +23386,16 @@ void Player::PrepareGossipMenu(WorldObject* source, uint32 menuId /*= 0*/, bool 
                 }
 #ifdef LICH_KING
                 case GOSSIP_OPTION_LEARNDUALSPEC:
-                    if (!(GetSpecsCount() == 1 && creature->CanResetTalents(this) && !(GetLevel() < sWorld->getIntConfig(CONFIG_MIN_DUALSPEC_LEVEL))))
+                    if (!(GetSpecsCount() == 1 && creature->CanResetTalents(this, false) && !(GetLevel() < sWorld->getIntConfig(CONFIG_MIN_DUALSPEC_LEVEL))))
                         canTalk = false;
                     break;
 #endif
                 case GOSSIP_OPTION_UNLEARNTALENTS:
-                    if (!creature->CanResetTalents(this))
+                    if (!creature->CanResetTalents(this, false))
                         canTalk = false;
                     break;
                 case GOSSIP_OPTION_UNLEARNPETTALENTS:
-                    if (!GetPet() || GetPet()->getPetType() != HUNTER_PET || GetPet()->m_spells.size() <= 1 || !creature->CanResetTalents(this))
+                    if (!GetPet() || GetPet()->getPetType() != HUNTER_PET || GetPet()->m_spells.size() <= 1 || !creature->CanResetTalents(this, true))
                         canTalk = false;
                     break;
                 case GOSSIP_OPTION_TAXIVENDOR:

@@ -50,6 +50,7 @@
 #include "MovementPacketBuilder.h"
 #include "MovementPacketSender.h"
 #include "MoveSplineInit.h"
+#include "UnitAI.h"
 
 #include <math.h>
 #include <array>
@@ -432,7 +433,7 @@ void Unit::Update(uint32 p_time)
     }
 
     // update abilities available only for fraction of time
-    UpdateReactives( p_time );
+    UpdateReactives(p_time);
 
     if (IsAlive())
     {
@@ -443,8 +444,10 @@ void Unit::Update(uint32 p_time)
     UpdateSplineMovement(p_time);
     i_motionMaster->Update(p_time);
 
-    if (!i_AI && (GetTypeId() != TYPEID_PLAYER || IsCharmed()))
+    if (!GetAI() && (GetTypeId() != TYPEID_PLAYER || IsCharmed()))
         UpdateCharmAI();
+
+    RefreshAI();
 }
 
 bool Unit::HaveOffhandWeapon() const
@@ -935,11 +938,7 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage *damageInfo, int32 dama
                 critPctDamageMod += GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_CRIT_PERCENT_VERSUS, crTypeMask);
 
                 if (critPctDamageMod != 0)
-                    damage = int32((damage) * float((100.0f + critPctDamageMod) / 100.0f));
-
-                // Resilience - reduce crit damage
-                if (pVictim->GetTypeId() == TYPEID_PLAYER)
-                    damage -= (pVictim->ToPlayer())->GetMeleeCritDamageReduction(damage);
+                    AddPct(damage, critPctDamageMod);
             }
             // Spell weapon based damage CAN BE crit & blocked at same time
             if (blocked)
@@ -947,7 +946,7 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage *damageInfo, int32 dama
                 damageInfo->blocked = uint32(pVictim->GetShieldBlockValue());
 #ifdef LICH_KING
                 // double blocked amount if block is critical
-                if (victim->isBlockCritical())
+                if (pVictim->isBlockCritical())
                     damageInfo->blocked += damageInfo->blocked;
 #endif
                 if (damage <= int32(damageInfo->blocked))
@@ -957,6 +956,8 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage *damageInfo, int32 dama
                 }
                 damage -= damageInfo->blocked;
             }
+            if (CanApplyResilience())
+                Unit::ApplyResilience(pVictim, nullptr, &damage, crit, (attackType == RANGED_ATTACK ? CR_CRIT_TAKEN_RANGED : CR_CRIT_TAKEN_MELEE));
         }
         break;
         // Magical Attacks
@@ -968,10 +969,10 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage *damageInfo, int32 dama
             {
                 damageInfo->HitInfo |= SPELL_HIT_TYPE_CRIT;
                 damage = Unit::SpellCriticalDamageBonus(this, spellInfo, damage, pVictim);
-                // Resilience - reduce crit damage
-                if (pVictim->GetTypeId() == TYPEID_PLAYER && !(spellInfo->HasAttribute(SPELL_ATTR4_IGNORE_RESISTANCES)))
-                    damage -= (pVictim->ToPlayer())->GetSpellCritDamageReduction(damage);
             }
+
+            if (CanApplyResilience())
+                Unit::ApplyResilience(pVictim, nullptr, &damage, crit, CR_CRIT_TAKEN_SPELL);
         }
         break;
         }
@@ -1015,6 +1016,44 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage *damageInfo, int32 dama
 #endif
 
     damageInfo->damage = dmgInfo.GetDamage();
+}
+
+
+uint32 Unit::GetMeleeCritDamageReduction(uint32 damage) const 
+{ 
+#ifdef LICH_KING
+    //3.0.3 "The damage reduction component of resilience has been increased from 2 times the critical strike chance reduction to 2.2 times the critical strike chance reduction. In addition, the maximum damage reduction to a critical strike from resilience has been increased from 30% to 33%. "
+    return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_MELEE, 2.2f, 33.0f, damage);
+#else
+    //but other sources give 25% and not 30%... error in blizz changelog?
+    return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_MELEE, 2.0f, 25.0f, damage);
+#endif
+}
+uint32 Unit::GetRangedCritDamageReduction(uint32 damage) const 
+{
+#ifdef LICH_KING
+    return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_RANGED, 2.2f, 33.0f, damage);
+#else
+    return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_RANGED, 2.0f, 25.0f, damage);
+#endif
+}
+uint32 Unit::GetSpellCritDamageReduction(uint32 damage) const 
+{
+#ifdef LICH_KING
+    return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_SPELL, 2.2f, 33.0f, damage);
+#else
+    return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_SPELL, 2.0f, 25.0f, damage);
+#endif
+}
+
+uint32 Unit::GetDotDamageReduction(uint32 damage) const
+{
+#ifdef LICH_KING
+    return 0; //3.2.0: "No longer reduces the amount of damage done by damage-over-time spells"
+#else
+    // Dot resilience not limited 
+    return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_SPELL, 1.0f, 100.0f, damage);
+#endif
 }
 
 void Unit::DealSpellDamage(SpellNonMeleeDamage *damageInfo, bool durabilityLoss)
@@ -1238,14 +1277,6 @@ void Unit::CalculateMeleeDamage(Unit *pVictim, CalcDamageInfo *damageInfo, Weapo
                 mod += GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_CRIT_PERCENT_VERSUS, crTypeMask);
                 if (mod != 0)
                     AddPct(damageInfo->Damages[i].Damage, mod);
-
-                // Resilience - reduce crit damage
-                if (pVictim->GetTypeId() == TYPEID_PLAYER)
-                {
-                    uint32 resilienceReduction = (pVictim->ToPlayer())->GetMeleeCritDamageReduction(damageInfo->Damages[i].Damage);
-                    damageInfo->Damages[i].Damage -= resilienceReduction;
-                    damageInfo->CleanDamage += resilienceReduction;
-                }
             }
 
             break;
@@ -1348,6 +1379,15 @@ void Unit::CalculateMeleeDamage(Unit *pVictim, CalcDamageInfo *damageInfo, Weapo
 
     for (uint8 i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
     {
+        int32 resilienceReduction = damageInfo->Damages[i].Damage;
+        // attackType is checked already for BASE_ATTACK or OFF_ATTACK so it can't be RANGED_ATTACK here
+        if (CanApplyResilience())
+            Unit::ApplyResilience(pVictim, nullptr, &resilienceReduction, (damageInfo->HitOutCome == MELEE_HIT_CRIT), CR_CRIT_TAKEN_MELEE);
+
+        resilienceReduction = damageInfo->Damages[i].Damage - resilienceReduction;
+        damageInfo->Damages[i].Damage -= resilienceReduction;
+        damageInfo->CleanDamage += resilienceReduction;
+
         // Calculate absorb resist
         if (int32(damageInfo->Damages[i].Damage) > 0)
         {
@@ -1985,22 +2025,6 @@ static const SpellPartialResistDistribution SPELL_PARTIAL_RESIST_DISTRIBUTION = 
     damageInfo.ModifyDamage(-absorbIgnoringDamage);
 #endif
 
-    AuraEffectList const& vOverrideScripts = damageInfo.GetVictim()->GetAuraEffectsByType(SPELL_AURA_OVERRIDE_CLASS_SCRIPTS);
-    for (AuraEffectList::const_iterator i = vOverrideScripts.begin(), next; i != vOverrideScripts.end(); i = next)
-    {
-        next = i; ++next;
-
-        if (damageInfo.GetVictim()->GetTypeId() != TYPEID_PLAYER)
-            break;
-
-        // Shadow of Death - set cheat death on cooldown
-        if ((*i)->GetSpellInfo()->Id == 40251 && damageInfo.GetVictim()->GetHealth() <= damageInfo.GetDamage())
-        {
-            (damageInfo.GetVictim()->ToPlayer())->GetSpellHistory()->AddCooldown(31231, 0, std::chrono::seconds(60));
-            break;
-        }
-    }
-
     // We're going to call functions which can modify content of the list during iteration over it's elements
     // Let's copy the list so we can prevent iterator invalidation
     AuraEffectList vSchoolAbsorbCopy(damageInfo.GetVictim()->GetAuraEffectsByType(SPELL_AURA_SCHOOL_ABSORB));
@@ -2019,42 +2043,6 @@ static const SpellPartialResistDistribution SPELL_PARTIAL_RESIST_DISTRIBUTION = 
 
         if (!(absorbAurEff->GetMiscValue() & damageInfo.GetSchoolMask()))
             continue;
-
-        // Cheat Death hack
-        if (damageInfo.GetVictim()->GetTypeId() == TYPEID_PLAYER && absorbAurEff->GetSpellInfo()->SpellFamilyName == SPELLFAMILY_ROGUE && absorbAurEff->GetSpellInfo()->SpellIconID == 2109)
-        {
-            Player* playerVictim = damageInfo.GetVictim()->ToPlayer();
-            if (playerVictim->GetSpellHistory()->HasCooldown(31231))
-                continue;
-            if (playerVictim->GetHealth() <= damageInfo.GetDamage())
-            {
-                int32 chance = damageInfo.GetAbsorb();
-                if (roll_chance_i(chance))
-                {
-                    playerVictim->CastSpell(playerVictim, 31231, true);
-                    playerVictim->GetSpellHistory()->AddCooldown(31231, 0, std::chrono::seconds(60));
-
-                    // with health > 10% lost health until health==10%, in other case no losses
-                    uint32 health10 = playerVictim->GetMaxHealth() / 10;
-                    if (playerVictim->GetHealth() <= health10)
-                        damageInfo.AbsorbDamage(damageInfo.GetDamage()); //absorb remaining damage
-                    else
-                        damageInfo.AbsorbDamage(damageInfo.GetDamage() - (damageInfo.GetDamage() - health10)); //absorb damage up to 10% hp
-                }
-            }
-            continue;
-        }
-
-        // Shadow of Death hack
-        if (absorbAurEff->GetSpellInfo()->Id == 40251)
-        {
-            if (damageInfo.GetVictim()->GetHealth() <= damageInfo.GetDamage())
-            {
-                damageInfo.AbsorbDamage(damageInfo.GetDamage()); //absorb remaining damage
-                absorbAurEff->GetBase()->Remove();
-            }
-            break;
-        }
 
         //Reflective Shield
         if ((damageInfo.GetVictim() != damageInfo.GetAttacker()))
@@ -3153,13 +3141,8 @@ float Unit::GetUnitCriticalChanceTaken(Unit const* attacker, WeaponAttackType at
 #endif
 
     // reduce crit chance from Rating for players
-    if (GetTypeId() == TYPEID_PLAYER)
-    {
-        if (attackType == RANGED_ATTACK)
-            chance -= (ToPlayer())->GetRatingBonusValue(CR_CRIT_TAKEN_RANGED);
-        else
-            chance -= (ToPlayer())->GetRatingBonusValue(CR_CRIT_TAKEN_MELEE);
-    }
+    if (attacker->CanApplyResilience())
+        Unit::ApplyResilience(this, &chance, nullptr, false, (attackType == RANGED_ATTACK ? CR_CRIT_TAKEN_RANGED : CR_CRIT_TAKEN_MELEE));
 
     chance += GetTotalAuraModifier(SPELL_AURA_MOD_ATTACKER_SPELL_AND_WEAPON_CRIT_CHANCE);
 
@@ -3654,7 +3637,7 @@ void Unit::SetCurrentCastedSpell( Spell * pSpell )
     if (pSpell == m_currentSpells[CSpellType]) return;      // avoid breaking self
 
     // break same type spell if it is not delayed
-    InterruptSpell(CSpellType,false);
+    InterruptSpell(CSpellType, false);
 
     // special breakage effects:
     switch (CSpellType)
@@ -4858,7 +4841,7 @@ void Unit::SetMinion(Minion *minion, bool apply)
 #ifdef LICH_KING
         minion->SetByteValue(UNIT_FIELD_BYTES_2, UNIT_BYTES_2_OFFSET_PVP_FLAG, GetByteValue(UNIT_FIELD_BYTES_2, UNIT_BYTES_2_OFFSET_PVP_FLAG));
 #else
-        minion->SetPvP(true);
+        minion->SetPvP(IsPvP());
 #endif
 
         // FIXME: hack, speed must be set only at follow
@@ -4997,7 +4980,7 @@ void Unit::SetCharm(Unit* charm, bool apply)
 #ifdef LICH_KING
         charm->SetByteValue(UNIT_FIELD_BYTES_2, UNIT_BYTES_2_OFFSET_PVP_FLAG, GetByteValue(UNIT_FIELD_BYTES_2, UNIT_BYTES_2_OFFSET_PVP_FLAG));
 #else
-        charm->SetPvP(true);
+        charm->SetPvP(IsPvP());
 #endif
 
         ASSERT(charm->AddGuidValue(UNIT_FIELD_CHARMEDBY, GetGUID()),
@@ -5041,7 +5024,7 @@ void Unit::SetCharm(Unit* charm, bool apply)
 #ifdef LICH_KING
             charm->SetByteValue(UNIT_FIELD_BYTES_2, UNIT_BYTES_2_OFFSET_PVP_FLAG, player->GetByteValue(UNIT_FIELD_BYTES_2, UNIT_BYTES_2_OFFSET_PVP_FLAG));
 #else
-            charm->SetPvP(true);
+            charm->SetPvP(IsPvP());
 #endif    
         }
         else
@@ -5519,19 +5502,19 @@ uint32 Unit::SpellDamageBonusTaken(Unit* caster, SpellInfo const *spellProto, ui
     {
         switch (mDummyAura->GetSpellInfo()->SpellIconID)
         {
-            //Cheat Death
+        //Cheat Death
         case 2109:
-            if ((mDummyAura->GetMiscValue() & spellProto->GetSchoolMask()))
+            //sun: why only normal? Supposed to affect all damage. //if ((*i)->GetMiscValue() & SPELL_SCHOOL_MASK_NORMAL)
             {
-                if (GetTypeId() != TYPEID_PLAYER)
-                    continue;
-                float mod = -1.0f * (ToPlayer())->GetRatingBonusValue(CR_CRIT_TAKEN_SPELL) * 2 * 4;
+                // Patch 2.4.3: The resilience required to reach the 90% damage reduction cap
+                //  is 22.5% critical strike damage reduction, or 444 resilience.
+                // To calculate for 90%, we multiply the 100% by 4 (22.5% * 4 = 90%)
+                float mod = -1.0f * GetMeleeCritDamageReduction(400);
                 AddPct(TakenTotalMod, std::max(mod, float(mDummyAura->GetAmount())));
-                TakenTotalMod *= (mod + 100.0f) / 100.0f;
             }
             break;
-            //This is changed in TLK, using aura 255
-            //Mangle bear and cat. This hack should be removed 
+        //This is changed in TLK, using aura 255
+        //Mangle bear and cat. This hack should be removed 
         case 2312:
         case 44955:
             // don't apply mod twice
@@ -5993,11 +5976,13 @@ float Unit::SpellCritChanceTaken(Unit const* caster, SpellInfo const* spellInfo,
             {
                 // Modify critical chance by victim SPELL_AURA_MOD_ATTACKER_SPELL_CRIT_CHANCE
                 crit_chance += GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_ATTACKER_SPELL_CRIT_CHANCE, schoolMask);
+
+                if (caster && caster->CanApplyResilience())
+                    Unit::ApplyResilience(this, &crit_chance, nullptr, false, CR_CRIT_TAKEN_SPELL);
+
                 // Modify critical chance by victim SPELL_AURA_MOD_ATTACKER_SPELL_AND_WEAPON_CRIT_CHANCE
                 crit_chance += GetTotalAuraModifier(SPELL_AURA_MOD_ATTACKER_SPELL_AND_WEAPON_CRIT_CHANCE);
-                // Modify by player victim resilience
-                if (GetTypeId() == TYPEID_PLAYER)
-                    crit_chance -= (ToPlayer())->GetRatingBonusValue(CR_CRIT_TAKEN_SPELL);
+
                 // scripted (increase crit chance ... against ... target by x%
                 if (IsFrozen()) // Shatter
                 {
@@ -6806,39 +6791,24 @@ uint32 Unit::MeleeDamageBonusTaken(Unit* attacker, uint32 pdamage, WeaponAttackT
         {
         // Cheat Death
         case 2109:
-            if ((*i)->GetMiscValue() & SPELL_SCHOOL_MASK_NORMAL)
-            {
-                if (GetTypeId() != TYPEID_PLAYER)
-                    continue;
-                float mod = ToPlayer()->GetRatingBonusValue(CR_CRIT_TAKEN_MELEE)*(-8.0f);
-                AddPct(TakenTotalMod, std::max(mod, float((*i)->GetAmount())));
-            }
-            /* TC has
-                // Patch 2.4.3: The resilience required to reach the 90% damage reduction cap
-                //  is 22.5% critical strike damage reduction, or 444 resilience.
-                // To calculate for 90%, we multiply the 100% by 4 (22.5% * 4 = 90%)
-                float mod = -1.0f * GetMeleeCritDamageReduction(400);
-            */
+        {
+            // Patch 2.4.3: The resilience required to reach the 90% damage reduction cap
+            //  is 22.5% critical strike damage reduction, or 444 resilience.
+            // To calculate for 90%, we multiply the 100% by 4 (22.5% * 4 = 90%)
+            float mod = -1.0f * GetMeleeCritDamageReduction(400);
+            AddPct(TakenTotalMod, std::max(mod, float((*i)->GetAmount()))); //spell has -90 in amount
             break;
+        }
         //Mangle
         case 2312:
-            if (spellProto == nullptr)
-                break;
+        {
             // Should increase Shred (initial Damage of Lacerate and Rake handled in Spell::EffectSchoolDMG)
-            if (spellProto->SpellFamilyName == SPELLFAMILY_DRUID && (spellProto->SpellFamilyFlags == 0x00008000LL))
+            if (spellProto && spellProto->SpellFamilyName == SPELLFAMILY_DRUID && (spellProto->SpellFamilyFlags == 0x00008000LL))
                 TakenTotalMod *= (100.0f + (*i)->GetAmount()) / 100.0f;
             break;
         }
+        }
     }
-
-    // .. taken pct: class scripts
-    //*AuraEffectList const& mclassScritAuras = GetAuraEffectsByType(SPELL_AURA_OVERRIDE_CLASS_SCRIPTS);
-    //for (AuraEffectList::const_iterator i = mclassScritAuras.begin(); i != mclassScritAuras.end(); ++i)
-    //{
-    //    switch ((*i)->GetMiscValue())
-    //    {
-    //    }
-    //}*/
 
     if (attType != RANGED_ATTACK)
         TakenTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_MELEE_DAMAGE_TAKEN_PCT);
@@ -7977,6 +7947,99 @@ void Unit::SendPlaySpellImpact(ObjectGuid guid, uint32 id) const
     SendMessageToSet(&data, false);
 }
 
+bool Unit::CanApplyResilience() const
+{
+    return !IsVehicle() && GetOwnerGUID().IsPlayer();
+}
+
+/*static*/ void Unit::ApplyResilience(Unit const* victim, float* crit, int32* damage, bool isCrit, CombatRating type)
+{
+    // player mounted on multi-passenger mount is also classified as vehicle
+    if (victim->IsVehicle() && victim->GetTypeId() != TYPEID_PLAYER)
+        return;
+
+    Unit const* target = nullptr;
+    if (victim->GetTypeId() == TYPEID_PLAYER)
+        target = victim;
+    else // victim->GetTypeId() == TYPEID_UNIT
+    {
+        if (Unit* owner = victim->GetOwner())
+            if (owner->GetTypeId() == TYPEID_PLAYER)
+                target = owner;
+    }
+
+    if (!target)
+        return;
+
+    switch (type)
+    {
+    case CR_CRIT_TAKEN_MELEE:
+        // Crit chance reduction works against nonpets
+        if (crit)
+            *crit -= target->GetMeleeCritChanceReduction();
+        if (damage)
+        {
+            if (isCrit)
+                *damage -= target->GetMeleeCritDamageReduction(*damage);
+
+#ifdef LICH_KING
+            *damage -= target->GetMeleeDamageReduction(*damage);
+#endif
+        }
+        break;
+    case CR_CRIT_TAKEN_RANGED:
+        // Crit chance reduction works against nonpets
+        if (crit)
+            *crit -= target->GetRangedCritChanceReduction();
+        if (damage)
+        {
+            if (isCrit)
+                *damage -= target->GetRangedCritDamageReduction(*damage);
+
+#ifdef LICH_KING
+            *damage -= target->GetRangedDamageReduction(*damage);
+#endif
+        }
+        break;
+    case CR_CRIT_TAKEN_SPELL:
+        // Crit chance reduction works against nonpets
+        if (crit)
+            *crit -= target->GetSpellCritChanceReduction();
+        if (damage)
+        {
+            if (isCrit)
+                *damage -= target->GetSpellCritDamageReduction(*damage);
+
+#ifdef LICH_KING
+            *damage -= target->GetSpellDamageReduction(*damage);
+#endif
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+float Unit::GetCombatRatingReduction(CombatRating cr) const
+{
+    if (Player const* player = ToPlayer())
+        return player->GetRatingBonusValue(cr);
+#ifdef LICH_KING
+    //3.3.0: Pet Resilience: All player pets now get 100% of their master's resilience.
+    else if (IsPet() && GetOwner())
+        if (Player* owner = GetOwner()->ToPlayer())
+            return owner->GetRatingBonusValue(cr);
+#endif
+
+    return 0.0f;
+}
+
+uint32 Unit::GetCombatRatingDamageReduction(CombatRating cr, float rate, float cap, uint32 damage) const
+{
+    float percent = std::min(GetCombatRatingReduction(cr) * rate, cap);
+    return CalculatePct(damage, percent);
+}
+
 int32 Unit::CalculateAOEAvoidance(int32 damage, uint32 schoolMask, ObjectGuid const& casterGuid) const
 {
     damage = int32(float(damage) * GetTotalAuraMultiplierByMiscMask(SPELL_AURA_MOD_AOE_DAMAGE_AVOIDANCE, schoolMask));
@@ -8136,71 +8199,6 @@ bool Unit::IsFFAPvP() const
 ########                         ########
 #######################################*/
 
-/*
-bool Unit::HandleStatModifier(UnitMods unitMod, UnitModifierType modifierType, float amount, bool apply)
-{
-    if(unitMod >= UNIT_MOD_END || modifierType >= MODIFIER_TYPE_END)
-    {
-        TC_LOG_ERROR("FIXME","ERROR in HandleStatModifier(): non existed UnitMods or wrong UnitModifierType!");
-        return false;
-    }
-
-    switch(modifierType)
-    {
-        case BASE_VALUE:
-        case TOTAL_VALUE:
-            m_auraModifiersGroup[unitMod][modifierType] += apply ? amount : -amount;
-            break;
-        case BASE_PCT:
-        case TOTAL_PCT:
-            ApplyPercentModFloatVar(m_auraModifiersGroup[unitMod][modifierType], amount, apply);
-            break;
-        default:
-            break;
-    }
-
-    if(!CanModifyStats())
-        return false;
-
-    switch(unitMod)
-    {
-        case UNIT_MOD_STAT_STRENGTH:
-        case UNIT_MOD_STAT_AGILITY:
-        case UNIT_MOD_STAT_STAMINA:
-        case UNIT_MOD_STAT_INTELLECT:
-        case UNIT_MOD_STAT_SPIRIT:         UpdateStats(GetStatByAuraGroup(unitMod));  break;
-
-        case UNIT_MOD_ARMOR:               UpdateArmor();           break;
-        case UNIT_MOD_HEALTH:              UpdateMaxHealth();       break;
-
-        case UNIT_MOD_MANA:
-        case UNIT_MOD_RAGE:
-        case UNIT_MOD_FOCUS:
-        case UNIT_MOD_ENERGY:
-        case UNIT_MOD_HAPPINESS:           UpdateMaxPower(GetPowerTypeByAuraGroup(unitMod));         break;
-
-        case UNIT_MOD_RESISTANCE_HOLY:
-        case UNIT_MOD_RESISTANCE_FIRE:
-        case UNIT_MOD_RESISTANCE_NATURE:
-        case UNIT_MOD_RESISTANCE_FROST:
-        case UNIT_MOD_RESISTANCE_SHADOW:
-        case UNIT_MOD_RESISTANCE_ARCANE:   UpdateResistances(GetSpellSchoolByAuraGroup(unitMod));      break;
-
-        case UNIT_MOD_ATTACK_POWER:        UpdateAttackPowerAndDamage();         break;
-        case UNIT_MOD_ATTACK_POWER_RANGED: UpdateAttackPowerAndDamage(true);     break;
-
-        case UNIT_MOD_DAMAGE_MAINHAND:     UpdateDamagePhysical(BASE_ATTACK);    break;
-        case UNIT_MOD_DAMAGE_OFFHAND:      UpdateDamagePhysical(OFF_ATTACK);     break;
-        case UNIT_MOD_DAMAGE_RANGED:       UpdateDamagePhysical(RANGED_ATTACK);  break;
-
-        default:
-            break;
-    }
-
-    return true;
-}
-*/
-
 bool Unit::CanUseAttackType(uint8 attacktype) const
 {
     switch (attacktype)
@@ -8217,22 +8215,6 @@ bool Unit::CanUseAttackType(uint8 attacktype) const
             return true;
     }
 }
-
-/*
-float Unit::GetAmount(UnitMods unitMod, UnitModifierType modifierType) const
-{
-    if( unitMod >= UNIT_MOD_END || modifierType >= MODIFIER_TYPE_END)
-    {
-        TC_LOG_ERROR("FIXME","ERROR: trial to access non existed modifier value from UnitMods!");
-        return 0.0f;
-    }
-
-    if(modifierType == TOTAL_PCT && m_auraModifiersGroup[unitMod][modifierType] <= 0.0f)
-        return 0.0f;
-
-    return m_auraModifiersGroup[unitMod][modifierType];
-}
-*/
 
 float Unit::GetTotalStatValue(Stats stat) const
 {
@@ -8630,17 +8612,30 @@ void Unit::ApplyMaxPowerMod(Powers power, uint32 val, bool apply)
     }
 }
 
-uint32 Unit::GetCreatePowers( Powers power ) const
+uint32 Unit::GetCreatePowerValue(Powers power) const
 {
     // POWER_FOCUS and POWER_HAPPINESS only have hunter pet
     switch(power)
     {
-        case POWER_MANA:      return GetCreateMana();
-        case POWER_RAGE:      return 1000;
-        case POWER_FOCUS:     return (GetTypeId()==TYPEID_PLAYER || !((Creature const*)this)->IsPet() || ((Pet const*)this)->getPetType()!=HUNTER_PET ? 0 : 100);
-        case POWER_ENERGY:    return 100;
-        case POWER_HAPPINESS: return (GetTypeId()==TYPEID_PLAYER || !((Creature const*)this)->IsPet() || ((Pet const*)this)->getPetType()!=HUNTER_PET ? 0 : 1050000);
-        default:              break;
+        case POWER_MANA:      
+            return GetCreateMana();
+        case POWER_RAGE:      
+            return 1000;
+        case POWER_FOCUS:
+            return (GetTypeId() == TYPEID_PLAYER || !((Creature const*)this)->IsPet() || ((Pet const*)this)->getPetType() != HUNTER_PET ? 0 : 100);
+        case POWER_ENERGY:    
+            return 100;
+        case POWER_HAPPINESS:
+            return (GetTypeId() == TYPEID_PLAYER || !((Creature const*)this)->IsPet() || ((Pet const*)this)->getPetType() != HUNTER_PET ? 0 : 1050000);
+        case POWER_HEALTH:
+#ifdef LICH_KING
+        case POWER_RUNIC_POWER:
+            return 1000;
+        case POWER_RUNE:
+#endif
+            return 0;
+        default:             
+            break;
     }
 
     return 0;
@@ -8658,10 +8653,35 @@ void Unit::AIUpdateTick(uint32 diff)
     }
 }
 
+void Unit::PushAI(UnitAI* newAI)
+{
+    i_AIs.emplace(newAI);
+}
+
 void Unit::SetAI(UnitAI* newAI)
 {
-    ASSERT(!m_aiLocked, "Attempt to replace AI during AI update tick");
-    i_AI.reset(newAI);
+    PushAI(newAI);
+    RefreshAI();
+}
+
+bool Unit::PopAI()
+{
+    if (!i_AIs.empty())
+    {
+        i_AIs.pop();
+        return true;
+    }
+    else
+        return false;
+}
+
+void Unit::RefreshAI()
+{
+    ASSERT(!m_aiLocked, "Tried to change current AI during UpdateAI()");
+    if (i_AIs.empty())
+        i_AI = nullptr;
+    else
+        i_AI = i_AIs.top();
 }
 
 void Unit::ScheduleAIChange()
@@ -8669,25 +8689,20 @@ void Unit::ScheduleAIChange()
     bool const charmed = IsCharmed();
     // if charm is applied, we can't have disabled AI already, and vice versa
     if (charmed)
-        ASSERT(!i_disabledAI, "Attempt to schedule charm AI change on unit that already has disabled AI");
-    else if (GetTypeId() != TYPEID_PLAYER)
-        ASSERT(i_disabledAI, "Attempt to schedule charm ID change on unit that doesn't have disabled AI");
-    if (charmed)
-        i_disabledAI = std::move(i_AI);
-    else if (m_aiLocked)
-    {
-        ASSERT(!i_lockedAILifetimeExtension, "Attempt to schedule multiple charm AI changes during one update");
-        i_lockedAILifetimeExtension = std::move(i_AI); // AI needs to live just a bit longer to finish its UpdateAI
-    }
+        PushAI(nullptr);
     else
-        i_AI.reset();
+    {
+        RestoreDisabledAI();
+        PushAI(nullptr); //This could actually be PopAI() to get the previous AI but it's required atm to trigger UpdateCharmAI()
+    }
 }
 
 void Unit::RestoreDisabledAI()
 {
-    ASSERT((GetTypeId() == TYPEID_PLAYER) || i_disabledAI, "Attempt to restore disabled AI on creature without disabled AI");
-    i_AI = std::move(i_disabledAI);
-    i_lockedAILifetimeExtension.reset();
+    // Keep popping the stack until we either reach the bottom or find a valid AI
+    while (PopAI())
+        if (GetTopAI())
+            return;
 }
 
 void Unit::UpdateResistanceBuffModsMod(SpellSchools school)
@@ -8919,14 +8934,16 @@ void Unit::UpdateCharmAI()
         }
 
         ASSERT(newAI);
-        i_AI.reset(newAI);
+        SetAI(newAI);
         newAI->OnCharmed(true);
     }
     else
     {
         RestoreDisabledAI();
-        if (i_AI)
-            i_AI->OnCharmed(true);
+        // Hack: this is required because we want to call OnCharmed(true) on the restored AI
+        RefreshAI();
+        if (UnitAI* ai = GetAI())
+            ai->OnCharmed(true);
     }
 }
 
@@ -9000,24 +9017,9 @@ void CharmInfo::InitPossessCreateSpells()
 {
     if(_unit->GetTypeId() == TYPEID_UNIT)
     {
-        // Adding switch until better way is found. Malcrom
-        // Adding entrys to this switch will prevent COMMAND_ATTACK being added to pet bar.
-        switch (_unit->GetEntry())
-        {
-#ifdef LICH_KING
-        case 23575: // Mindless Abomination
-        case 24783: // Trained Rock Falcon
-        case 27664: // Crashin' Thrashin' Racer
-        case 40281: // Crashin' Thrashin' Racer
-#endif
-        case 25653: // Power of the Blue Flight (Kil'Jaeden fight)
-        case 23109: // Vengeful Spirit (Teron Gorefiend fight)
-            break;
-        default:
+        auto info = _unit->ToCreature()->GetCreatureTemplate();
+        if(!(info->DifficultyFlags.Flags2 & CREATURE_DIFFICULTYFLAGS_2_NO_DEFAULT_PET_BAR))
             InitEmptyActionBar();
-            break;
-        }
-
 
         for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
         {
@@ -9043,8 +9045,12 @@ void CharmInfo::InitCharmCreateSpells()
         InitEmptyActionBar();
         return;
     }
-
-    InitPetActionBar();
+    else if (_unit->GetTypeId() == TYPEID_UNIT)
+    {
+        auto info = _unit->ToCreature()->GetCreatureTemplate();
+        if (!(info->DifficultyFlags.Flags2 & CREATURE_DIFFICULTYFLAGS_2_NO_DEFAULT_PET_BAR))
+            InitPetActionBar();
+    }
 
     for (uint32 x = 0; x < MAX_SPELL_CHARM; ++x)
     {
@@ -10196,7 +10202,8 @@ void Unit::SetStunned(bool apply)
     }
     else
     {
-        AttackStop(); //This will reupdate current victim. patch 2.4.3 : When a stun wears off, the creature that was stunned will prefer the last target with the highest threat, versus the current target. 
+        if(!IsControlledByPlayer()) //sun: don't update for pets
+            AttackStop(); //This will reupdate current victim. patch 2.4.3 : When a stun wears off, the creature that was stunned will prefer the last target with the highest threat, versus the current target. 
 
         if (IsAlive() && GetVictim())
             SetTarget(EnsureVictim()->GetGUID());
@@ -10285,7 +10292,8 @@ void Unit::SetFeared(bool apply)
     }
     else
     {
-        AttackStop();  //sun: This will reupdate current victim. patch 2.4.3 : When a stun wears off, the creature that was stunned will prefer the last target with the highest threat, versus the current target. I'm not sure this should apply to fear but this seems logical.
+        if (!IsControlledByPlayer()) //sun: don't update for pets
+            AttackStop();  //sun: This will reupdate current victim. patch 2.4.3 : When a stun wears off, the creature that was stunned will prefer the last target with the highest threat, versus the current target. I'm not sure this should apply to fear but this seems logical.
 
         if (IsAlive())
         {
@@ -10308,7 +10316,8 @@ void Unit::SetConfused(bool apply)
     }
     else
     {
-        AttackStop();  //This will reupdate current victim. patch 2.4.3 : When a stun wears off, the creature that was stunned will prefer the last target with the highest threat, versus the current target. I'm not sure this should apply to fear but this seems logical.
+        if (!IsControlledByPlayer()) //sun: don't update for pets
+            AttackStop();  //This will reupdate current victim. patch 2.4.3 : When a stun wears off, the creature that was stunned will prefer the last target with the highest threat, versus the current target. I'm not sure this should apply to fear but this seems logical.
 
         if (IsAlive())
         {
@@ -12333,8 +12342,8 @@ float Unit::ComputeCollisionHeight() const
             {
                 CreatureDisplayInfoEntry const* displayInfo = sCreatureDisplayInfoStore.AssertEntry(GetNativeDisplayId());
                 CreatureModelDataEntry const* modelData = sCreatureModelDataStore.AssertEntry(displayInfo->ModelId);
-                float const collisionHeight = scaleMod * (mountModelData->MountHeight + modelData->CollisionHeight * modelData->Scale * displayInfo->scale * 0.5f);
-                return collisionHeight == 0.0f ? DEFAULT_COLLISION_HEIGHT : collisionHeight;
+                float const _collisionHeight = scaleMod * (mountModelData->MountHeight + modelData->CollisionHeight * modelData->Scale * displayInfo->scale * 0.5f);
+                return _collisionHeight == 0.0f ? DEFAULT_COLLISION_HEIGHT : _collisionHeight;
             }
         }
     }
@@ -12343,8 +12352,8 @@ float Unit::ComputeCollisionHeight() const
     CreatureDisplayInfoEntry const* displayInfo = sCreatureDisplayInfoStore.AssertEntry(GetNativeDisplayId());
     CreatureModelDataEntry const* modelData = sCreatureModelDataStore.AssertEntry(displayInfo->ModelId);
 
-    float const collisionHeight = scaleMod * modelData->CollisionHeight * modelData->Scale * displayInfo->scale;
-    return collisionHeight == 0.0f ? DEFAULT_COLLISION_HEIGHT : collisionHeight;
+    float const _collisionHeight = scaleMod * modelData->CollisionHeight * modelData->Scale * displayInfo->scale;
+    return _collisionHeight == 0.0f ? DEFAULT_COLLISION_HEIGHT : _collisionHeight;
 }
 
 std::string Unit::GetDebugInfo() const
@@ -12744,8 +12753,9 @@ AuraApplication* Unit::_CreateAuraApplication(Aura* aura, uint8 effMask)
 {
     // can't apply aura on unit which is going to be deleted - to not create a memory leak
     ASSERT(!m_cleanupDone);
-    // aura musn't be removed
-    ASSERT(!aura->IsRemoved());
+    // aura musn't be removed (but it could have been removed by OnEffectHitTarget script handler
+    // casting a spell that killed the target and set deathState to CORPSE)
+    ASSERT(!aura->IsRemoved() || !IsAlive());
 
     // aura mustn't be already applied on target
     ASSERT(!aura->IsAppliedOnTarget(GetGUID()) && "Unit::_CreateAuraApplication: aura musn't be applied on target");

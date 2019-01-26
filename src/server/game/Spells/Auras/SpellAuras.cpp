@@ -525,7 +525,7 @@ m_isPeriodic(false), m_updated(false), m_amplitude(0)
     if (createInfo.Caster)
     {
         _casterInfo.Level = createInfo.Caster->GetLevel();
-        //TC _casterInfo.ApplyResilience = caster->CanApplyResilience();
+        _casterInfo.ApplyResilience = createInfo.Caster->CanApplyResilience();
         SaveCasterInfo(createInfo.Caster);
     }
 
@@ -1046,7 +1046,8 @@ uint8 Aura::GetProcEffectMask(AuraApplication* aurApp, ProcEventInfo& eventInfo,
         }
     }
 
-    if (roll_chance_f(CalcProcChance(*procEntry, eventInfo)))
+    bool cheatProc = target->GetTypeId() == TYPEID_PLAYER && target->ToPlayer()->GetCommandStatus(CHEAT_PROC);
+    if (cheatProc || roll_chance_f(CalcProcChance(*procEntry, eventInfo)))
         return procEffectMask;
 
     return 0;

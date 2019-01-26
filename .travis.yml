@@ -1,5 +1,5 @@
 sudo: false
-dist: trusty
+dist: xenial
 
 language: cpp
 compiler:
@@ -11,32 +11,33 @@ git:
 addons:
   mariadb: '10.3'
   apt:
+    update: true
     sources:
       - ubuntu-toolchain-r-test
-      - sourceline: 'ppa:kzemek/boost'
+      - sourceline: 'ppa:rexut/factory'
     packages:
-      - g++-6
       - libssl-dev
-      - libmariadbclient-dev 
+      - libmariadb-client-lgpl-dev
       - libreadline6-dev
       - zlib1g-dev
       - libbz2-dev
-      - libboost1.58-dev
-      - libboost-filesystem1.58-dev
-      - libboost-iostreams1.58-dev
-      - libboost-program-options1.58-dev
-      - libboost-regex1.58-dev
-      - libboost-system1.58-dev
-      - libboost-thread1.58-dev
+      - libboost1.62-dev
+      - libboost-filesystem1.62-dev
+      - libboost-iostreams1.62-dev
+      - libboost-program-options1.62-dev
+      - libboost-regex1.62-dev
+      - libboost-system1.62-dev
+      - libboost-thread1.62-dev
       # For data archive
       - p7zip
       # For post run debug
       - gdb
       
 before_install:
+  - apt-cache policy libboost-dev
   - git config user.email "travis@build.bot" && git config user.name "Travis CI"
   - git tag -a -m "Travis build" init
-  # Some core dump info
+  # To get core dump infos
   - ulimit -c
   - ulimit -a -S
   - ulimit -a -H
@@ -64,9 +65,9 @@ script:
   - make -j 10 -k && make install && make clean
   - cd check_install
   - mkdir data && cd data
-  - wget https://blob.allumeciga.re/2019_01_13_data.7z
-  - 7zr x 2019_01_13_data.7z -y > /dev/null
-  - rm 2019_01_13_data.7z
+  - wget https://blob.allumeciga.re/2019_01_22_data.7z
+  - 7zr x 2019_01_22_data.7z -y > /dev/null
+  - rm 2019_01_22_data.7z
   - cd ..
   - ls
   - cd bin

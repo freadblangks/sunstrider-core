@@ -475,7 +475,7 @@ void Player::UpdateMaxPower(Powers power)
 
     float bonusPower = (power == POWER_MANA) ? GetManaBonusFromIntellect() : 0;
     
-    float value = GetFlatModifierValue(unitMod, BASE_VALUE) + GetCreatePowers(power);
+    float value = GetFlatModifierValue(unitMod, BASE_VALUE) + GetCreatePowerValue(power);
     value *= GetPctModifierValue(unitMod, BASE_PCT);
     value += GetFlatModifierValue(unitMod, TOTAL_VALUE) + bonusPower;
     value *= GetPctModifierValue(unitMod, TOTAL_PCT);
@@ -1026,7 +1026,8 @@ void Creature::UpdateArmor()
 
 void Creature::UpdateMaxHealth()
 {
-    float value = GetTotalAuraModValue(UNIT_MOD_HEALTH);
+    //sun: changed this from TC: UNIT_MOD_HEALTH does not include base health on sunstrider
+    float value = GetFlatModifierValue(UNIT_MOD_HEALTH, BASE_VALUE) + GetCreateHealth();
     SetMaxHealth((uint32)value);
 }
 
@@ -1034,7 +1035,7 @@ void Creature::UpdateMaxPower(Powers power)
 {
     UnitMods unitMod = UnitMods(UNIT_MOD_POWER_START + power);
 
-    float value = GetFlatModifierValue(unitMod, BASE_VALUE) + GetCreatePowers(power);
+    float value = GetFlatModifierValue(unitMod, BASE_VALUE) + GetCreatePowerValue(power);
     value += GetFlatModifierValue(unitMod, TOTAL_VALUE);
     value *= GetPctModifierValue(unitMod, TOTAL_PCT);
     
@@ -1195,11 +1196,11 @@ bool Guardian::UpdateStats(Stats stat)
         value += ownersBonus;
     } else
 #endif
-        if (stat == STAT_STAMINA)
+    if (stat == STAT_STAMINA)
     {
+#ifdef LICH_KING
         //1 stamina gives 0.45 stamina untalented (erroneously reported as 0.3 stamina in the Hunter's stamina tooltip), or 0.63 stamina with 2/2 Wild Hunt (LK))s
         float mod = 0.45f;
-#ifdef LICH_KING
         if (IsPet())
         {
             PetSpellMap::const_iterator itr = (ToPet()->m_spells.find(62758)); // Wild Hunt rank 1
@@ -1212,6 +1213,9 @@ bool Guardian::UpdateStats(Stats stat)
                 AddPct(mod, spellInfo->Effects[EFFECT_0].CalcValue());
             }
         }
+#else
+        //sun: Tooltips give 0.3. Could be that the TLK comment above is true for TBC but I'm going to suppose this error is because it changed on TLK.
+        float mod = 0.3f;
 #endif
         ownersBonus = float(owner->GetStat(stat)) * mod;
         value += ownersBonus;
@@ -1299,16 +1303,23 @@ void Guardian::UpdateMaxHealth()
     UnitMods unitMod = UNIT_MOD_HEALTH;
     float stamina = GetStat(STAT_STAMINA) - GetCreateStat(STAT_STAMINA);
 
-        float multiplicator;
+    float multiplicator;
     switch (GetEntry())
     {
+#ifdef LICH_KING
         case ENTRY_IMP:         multiplicator = 8.4f;   break;
-        case ENTRY_VOIDWALKER:  multiplicator = 11.0f;  break;
         case ENTRY_SUCCUBUS:    multiplicator = 9.1f;   break;
         case ENTRY_FELHUNTER:   multiplicator = 9.5f;   break;
-        case ENTRY_FELGUARD:    multiplicator = 11.0f;  break;
-#ifdef LICH_KING
         case ENTRY_BLOODWORM:   multiplicator = 1.0f;   break;
+        case ENTRY_VOIDWALKER:  multiplicator = 11.0f;  break;
+        case ENTRY_FELGUARD:    multiplicator = 11.0f;  break;
+#else
+        //very approximate values... https://github.com/ValorenWoW/sunstrider-core/pull/164
+        case ENTRY_IMP:         multiplicator = 3.0f;   break;
+        case ENTRY_SUCCUBUS:    multiplicator = 6.0f;   break;
+        case ENTRY_FELHUNTER:   multiplicator = 11.0f;   break;
+        case ENTRY_VOIDWALKER:  multiplicator = 14.8f;  break;
+        case ENTRY_FELGUARD:    multiplicator = 12.0f;  break;
 #endif
         default:                multiplicator = 10.0f;  break;
     }
@@ -1339,7 +1350,7 @@ void Guardian::UpdateMaxPower(Powers power)
         default:                multiplicator = 15.0f;  break;
     }
 
-    float value = GetFlatModifierValue(unitMod, BASE_VALUE) + GetCreatePowers(power);
+    float value = GetFlatModifierValue(unitMod, BASE_VALUE) + GetCreatePowerValue(power);
     value *= GetPctModifierValue(unitMod, BASE_PCT);
     value += GetFlatModifierValue(unitMod, TOTAL_VALUE) + addValue * multiplicator;
     value *= GetPctModifierValue(unitMod, TOTAL_PCT);

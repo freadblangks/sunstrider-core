@@ -17,13 +17,11 @@ bool GameEventMgr::CheckOneGameEvent(uint16 entry) const
 {
     time_t currenttime = WorldGameTime::GetGameTime();
 
-
     switch (mGameEvent[entry].state)
     {
     default:
     case GAMEEVENT_NORMAL:
     {
-        time_t currenttime = WorldGameTime::GetGameTime();
         // Get the event information
         return mGameEvent[entry].start < currenttime
             && currenttime < mGameEvent[entry].end
@@ -33,14 +31,13 @@ bool GameEventMgr::CheckOneGameEvent(uint16 entry) const
     case GAMEEVENT_WORLD_CONDITIONS:
     case GAMEEVENT_WORLD_NEXTPHASE:
         return true;
-        // finished world events are inactive
+    // finished world events are inactive
     case GAMEEVENT_WORLD_FINISHED:
     case GAMEEVENT_INTERNAL:
         return false;
-        // if inactive world event, check the prerequisite events
+    // if inactive world event, check the prerequisite events
     case GAMEEVENT_WORLD_INACTIVE:
     {
-        time_t currenttime = WorldGameTime::GetGameTime();
         for (std::set<uint16>::const_iterator itr = mGameEvent[entry].prerequisite_events.begin(); itr != mGameEvent[entry].prerequisite_events.end(); ++itr)
         {
             if ((mGameEvent[*itr].state != GAMEEVENT_WORLD_NEXTPHASE && mGameEvent[*itr].state != GAMEEVENT_WORLD_FINISHED) ||   // if prereq not in nextphase or finished state, then can't start this one
@@ -785,7 +782,7 @@ void GameEventMgr::LoadFromDB()
         TC_LOG_INFO("server.loading", ">> Loaded %u battleground holidays in game events", count );
     }
 
-
+    count = 0;
     TC_LOG_INFO("server.loading", "Loading Game Event Seasonal Quest Relations...");
     {
         uint32 oldMSTime = GetMSTime();
@@ -797,7 +794,6 @@ void GameEventMgr::LoadFromDB()
             TC_LOG_INFO("server.loading", ">> Loaded 0 seasonal quests additions in game events. DB table `game_event_seasonal_questrelation` is empty.");
         else
         {
-            uint32 count = 0;
             do
             {
                 Field* fields = result->Fetch();

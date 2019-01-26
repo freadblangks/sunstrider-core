@@ -204,7 +204,7 @@ bool Pet::LoadPetFromDB(Player* owner, uint32 petentry, uint32 petnumber, bool c
     if (petentry == 19668 && owner->ToPlayer() && owner->ToPlayer()->GetTarget()) 
     {
         target = owner->ToPlayer()->GetVictim();
-        if (target && _CanCreatureAttack(target) == CAN_ATTACK_RESULT_OK)
+        if (target && CanCreatureAttack(target))
         {
             target->GetClosePoint(px, py, pz, GetCombatReach(), PET_FOLLOW_DIST, this->GetFollowAngle());
             UpdateAllowedPositionZ(px, py, pz); //prevent it spawning on flying targets
@@ -275,7 +275,7 @@ bool Pet::LoadPetFromDB(Player* owner, uint32 petentry, uint32 petnumber, bool c
             SetByteFlag(UNIT_FIELD_BYTES_2, UNIT_BYTES_2_OFFSET_PET_FLAGS, fields[12].GetBool() ? UNIT_RENAME_NOT_ALLOWED : UNIT_RENAME_ALLOWED);
 
             SetTP(fields[9].GetInt32());
-            SetMaxPower(POWER_HAPPINESS,GetCreatePowers(POWER_HAPPINESS));
+            SetMaxPower(POWER_HAPPINESS,GetCreatePowerValue(POWER_HAPPINESS));
             SetPower(   POWER_HAPPINESS,fields[15].GetUInt32());
             SetPowerType(POWER_FOCUS);
             break;
@@ -1029,7 +1029,7 @@ bool Pet::CreateBaseAtTamed(CreatureTemplate const* cinfo, Map* map, uint32 phas
         return false;
 
     //SetNativeDisplayId(creature->GetNativeDisplayId());
-    SetMaxPower(POWER_HAPPINESS, GetCreatePowers(POWER_HAPPINESS));
+    SetMaxPower(POWER_HAPPINESS, GetCreatePowerValue(POWER_HAPPINESS));
     SetPower(POWER_HAPPINESS, 166500);
     SetPowerType(POWER_FOCUS);
     SetUInt32Value(UNIT_FIELD_PET_NAME_TIMESTAMP, 0);
@@ -1261,12 +1261,6 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
         {
             switch (GetEntry())
             {
-                case ENTRY_WATER_ELEMENTAL: // mage Water Elemental
-                {
-                    //40% damage bonus of mage's frost damage
-                    SetBonusDamage(int32(GetOwner()->SpellBaseDamageBonusDone(SPELL_SCHOOL_MASK_FROST) * 0.4f)); //TC has 0.33f
-                    break;
-                }
                 case ENTRY_TREANT: //force of nature
                     if (!pInfo)
                         SetCreateHealth(30 + 30 * petlevel);

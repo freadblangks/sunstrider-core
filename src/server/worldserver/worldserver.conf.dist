@@ -895,6 +895,24 @@ BeepAtStart = 1
 Server.LoginInfo = 0
 
 #
+#    AllowTickets
+#        Description: Allow/disallow sending new tickets.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+
+AllowTickets = 1
+
+#
+#    DeletedCharacterTicketTrace
+#        Description: Keep trace of tickets opened by deleted characters
+#                     gm_ticket.playerGuid will be 0, old GUID and character name
+#                     will be included in gm_ticket.comment
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+DeletedCharacterTicketTrace = 0
+
+#
 #    ArenaSpectator.Enable
 #        Enable Arena Spectator (only affects chat commands)
 #        Default: 1
@@ -1015,6 +1033,13 @@ AutoAnnounce.Enable = 1
 WorldChannel.MinLevel = 10
 
 #
+#     LevelReq.Ticket
+#        Description: Level requirement for characters to be able to write tickets.
+#        Default:     1
+
+LevelReq.Ticket = 1
+
+#
 #    ClientCacheVersion
 #        Description: Client cache version for client cache data reset. Use any value different
 #                     from DB and not recently been used to trigger client side cache reset.
@@ -1026,10 +1051,10 @@ ClientCacheVersion = 0
 #
 #    Motd
 #        Description: Message of the Day, displayed at login. Use '@' for a newline.
-#        Default:     "Welcome to Sunstrider!"
+#        Default:     "Welcome to sunstrider-core server!"
 #
 
-Motd = "Welcome to Sunstrider!"
+Motd = "Welcome to a sunstrider-core server!"
 
 #
 #    Guild.BankEventLogRecordsCount
@@ -1520,12 +1545,12 @@ Visibility.GroupMode = 1
 #    Visibility.Distance.Instances
 #    Visibility.Distance.BGArenas
 #        Visibility distance for different ingame object in different maps.
-#        Visibility on continents on offy ~90 yards. In BG/Arenas ~180. For instances default ~120.
+#        Visibility on continents on offy ~100 yards. In BG/Arenas ~180. For instances default ~120.
 #        Max limited by active player zone: ~ 333
 #        Min limit is max aggro radius (45) * Rate.Creature.Aggro
 #
 
-Visibility.Distance.Continents = 90
+Visibility.Distance.Continents = 100
 Visibility.Distance.Instances  = 120
 Visibility.Distance.BGArenas   = 180
 
@@ -1537,7 +1562,7 @@ Visibility.Distance.BGArenas   = 180
 #        Max 323
 #
 
-Visibility.Distance.Object = 90
+Visibility.Distance.Object = 100
 
 #
 #    Visibility.Distance.InFlight
@@ -1545,7 +1570,7 @@ Visibility.Distance.Object = 90
 #        Min limit is 0 (not show any objects)
 #
 
-Visibility.Distance.InFlight = 90
+Visibility.Distance.InFlight = 100
 
 #
 #    Visibility.Notify.Period.OnContinents

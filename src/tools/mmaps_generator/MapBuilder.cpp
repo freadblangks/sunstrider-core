@@ -16,14 +16,13 @@ namespace MMAP
 {
     MapBuilder::MapBuilder(bool skipLiquid,
         bool skipContinents, bool skipJunkMaps, bool skipBattlegrounds,
-        bool debugOutput, bool bigBaseUnit, int mapid, bool quick, const char* offMeshFilePath) :
+        bool debugOutput, int mapid, bool quick, const char* offMeshFilePath) :
         m_terrainBuilder     (NULL),
         m_debugOutput        (debugOutput),
         m_offMeshFilePath    (offMeshFilePath),
         m_skipContinents     (skipContinents),
         m_skipJunkMaps       (skipJunkMaps),
         m_skipBattlegrounds  (skipBattlegrounds),
-        m_bigBaseUnit        (bigBaseUnit),
         m_mapid              (mapid),
         m_totalTiles         (0u),
         m_totalTilesProcessed(0u),
@@ -591,25 +590,23 @@ namespace MMAP
         // Remove walkable flag from spans which do not have enough
         // space above them for the agent to stand there.
         for (int y = 0; y < h; ++y)
-        {
             for (int x = 0; x < w; ++x)
-            {
-                for (rcSpan* spanOut = out.spans[x + y*w]; spanOut; spanOut = spanOut->next)
-                    for (rcSpan* spanFilter = filter.spans[x + y*w]; spanFilter; spanFilter = spanFilter->next)
+                for (rcSpan* spanOut = out.spans[x + y * w]; spanOut; spanOut = spanOut->next)
+                    for (rcSpan* spanFilter = filter.spans[x + y * w]; spanFilter; spanFilter = spanFilter->next)
+                    {
                         if (!(spanOut->area & NAV_STEEP_SLOPES)) // No steep slopes here.
                         {
                             const int bot = (int)(spanOut->smax);
                             const int top = (int)(spanFilter->smin);
                             if ((top - bot) <= max && (top - bot) >= 0)
                             {
-                                if ((top - bot) >= min)
+                                if ((top - bot) >= min) //water is deep enough, use spanFilter area instead
                                     spanOut->area = spanFilter->area;
-                                else if (spanFilter->area & NAV_WATER)
-                                    spanOut->area &= NAV_WATER;
+                                else if (spanFilter->area & NAV_WATER) //water is shallow, use both
+                                    spanOut->area |= spanFilter->area;
                             }
                         }
-            }
-        }
+                    }
     }
 
 
@@ -639,11 +636,11 @@ namespace MMAP
         // these are WORLD UNIT based metrics
         // this are basic unit dimentions
         // value have to divide GRID_SIZE(533.3333f) ( aka: 0.5333, 0.2666, 0.3333, 0.1333, etc )
-        const static float BASE_UNIT_DIM = m_bigBaseUnit ? 0.5333333f : 0.2666666f;
+        const static float BASE_UNIT_DIM = 0.2666666f;
 
         // All are in UNIT metrics!
         const static int VERTEX_PER_MAP = int(GRID_SIZE/BASE_UNIT_DIM + 0.5f);
-        const static int VERTEX_PER_TILE = m_bigBaseUnit ? 40 : 80; // must divide VERTEX_PER_MAP
+        const static int VERTEX_PER_TILE = 80; // must divide VERTEX_PER_MAP
         const static int TILES_PER_MAP = VERTEX_PER_MAP/VERTEX_PER_TILE;
 
         rcConfig config;
@@ -669,17 +666,17 @@ namespace MMAP
         config.maxVertsPerPoly = DT_VERTS_PER_POLYGON;
         config.walkableSlopeAngle = 75.0f;
         config.tileSize = VERTEX_PER_TILE;
-        config.walkableRadius = m_bigBaseUnit ? 1 : 2; //nost value here is 0.75
+        config.walkableRadius = 1; //nost uses this value (for continents at least)
         config.borderSize = config.walkableRadius + 3;
         config.maxEdgeLen = VERTEX_PER_TILE + 1;        // anything bigger than tileSize
         config.walkableHeight = (int)ceilf(agentHeight / config.ch);
         // a value >= 3|6 allows npcs to walk over some fences
         // a value >= 4|8 allows npcs to walk over all fences
         config.walkableClimb = (int)floorf(agentMaxClimbModelTerrainTransition / config.ch); // For models
-        config.minRegionArea = rcSqr(60);
-        config.mergeRegionArea = rcSqr(50);
-        config.maxSimplificationError = 1.8f;           // eliminates most jagged edges (tiny polygons)
-        config.detailSampleDist = config.cs * 16;
+        config.minRegionArea = rcSqr(30); //nost value here: if changing that one, check blade's edge arena pillars again. TC has 60, apparently too high
+        config.mergeRegionArea = rcSqr(20);  //TC has 50
+        config.maxSimplificationError = 1.5f; // eliminates most jagged edges (tiny polygons)
+        config.detailSampleDist = config.cs * 16; 
         config.detailSampleMaxError = config.ch * 1;
         int inWaterGround = config.walkableHeight;
         int stepForGroundInheriteWater = (int)ceilf(30.0f / config.ch);
@@ -729,14 +726,15 @@ namespace MMAP
                     printf("%sFailed building liquids heightfield!            \n", tileString);
                     continue;
                 }
+                rcRasterizeTriangles(m_rcContext, lVerts, lVertCount, lTris, lTriFlags, lTriCount, *liquidsTile.solid, 0);
 
                 /// 3. Mark all triangles with correct flags:
                 // Can't use rcMarkWalkableTriangles. We need something really more specific.
                 // mark all walkable tiles, both liquids and solids
                 unsigned char* triFlags = new unsigned char[tTriCount];
                 memset(triFlags, NAV_EMPTY, tTriCount * sizeof(unsigned char)); //sun: start empty instead of NAV_GROUND
-                markWalkableTriangles(meshData, triFlags, tVerts, tTris, tTriCount); // sun addition, replaces rcClearUnwalkableTriangles (adapted from nost)
-                // Now we remove terrain triangles under the mesh (actually set flags to 0)
+                markWalkableTriangles(meshData, triFlags, tVerts, tTris, tTriCount); // Replaces rcClearUnwalkableTriangles (adapted from nost)
+                // Now we remove terrain triangles under the mesh (actually set flags to 0) - Also adapted from Nost
                 if(!m_quick)
                     removeVMAPTrianglesUnderTerrain(mapID, meshData, triFlags, tVerts, tTris, tTriCount);
 
@@ -752,21 +750,13 @@ namespace MMAP
                 rcFilterLowHangingWalkableObstacles(m_rcContext, config.walkableClimb, *tile.solid);
                 rcFilterLedgeSpans(m_rcContext, tileCfg.walkableHeight, config.walkableClimb, *tile.solid);
 
-                /// 6. Now we are happy because we have the correct flags.
-                // Set's cleanup tmp flags used by the generator, so we don't have a too
-                // complicated navmesh in the end.
-                // (We dont care if a poly comes from Terrain or Model at runtime)
-                rcFilterWalkableLowHeightSpans(m_rcContext, tileCfg.walkableHeight, *tile.solid);
-                
-                /// 7. Let's process water now.
-                // When water is not deep, we have a transition area (AREA_WATER_TRANSITION)
+                /// 6. Let's process water now.
+                // When water is not deep, we have a transition area (both NAV_WATER and NAV_GROUND)
                 // Both ground and water creatures can be there.
                 // Otherwise, the terrain in shallow waters is considered as actual swim/water terrain.
                 filterWalkableLowHeightSpansWith(*liquidsTile.solid, *tile.solid, inWaterGround, stepForGroundInheriteWater);
 
-                rcRasterizeTriangles(m_rcContext, lVerts, lVertCount, lTris, lTriFlags, lTriCount, *tile.solid, config.walkableClimb);
-
-                /// 8. Now let's move on with the last and more generic steps of navmesh generation.
+                /// 7. Now let's move on with the last and more generic steps of navmesh generation.
                 // compact heightfield spans
                 tile.chf = rcAllocCompactHeightfield();
                 if (!tile.chf || !rcBuildCompactHeightfield(m_rcContext, tileCfg.walkableHeight, tileCfg.walkableClimb, *tile.solid, *tile.chf))

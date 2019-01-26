@@ -482,13 +482,8 @@ void Spell::EffectSchoolDMG(uint32 effect_idx)
         }
         case SPELLFAMILY_WARRIOR:
         {
-            // Bloodthirst
-            if (m_spellInfo->SpellFamilyFlags & 0x40000000000LL)
-            {
-                damage = uint32(damage * (_unitCaster->GetTotalAttackPowerValue(BASE_ATTACK, unitTarget)) / 100);
-            }
             // Shield Slam
-            else if (m_spellInfo->SpellFamilyFlags & 0x100000000LL)
+            if (m_spellInfo->SpellFamilyFlags & 0x100000000LL)
                 damage += int32(_unitCaster->GetShieldBlockValue());
             // Victory Rush
             else if (m_spellInfo->SpellFamilyFlags & 0x10000000000LL)
@@ -1970,16 +1965,6 @@ void Spell::EffectDummy(uint32 i)
                     // Tree of Life area effect
                     int32 health_mod = int32(_unitCaster->GetStat(STAT_SPIRIT)/4);
                     _unitCaster->CastSpell(_unitCaster, 34123, { SPELLVALUE_BASE_POINT0, health_mod } );
-                    return;
-                }
-            }
-            break;
-        case SPELLFAMILY_ROGUE:
-            switch(m_spellInfo->Id )
-            {
-                case 31231:                                 // Cheat Death
-                {
-                    m_caster->CastSpell(m_caster,45182, true);
                     return;
                 }
             }
@@ -4821,7 +4806,10 @@ void Spell::EffectInterruptCast(uint32 effIndex)
         {
             SpellInfo const* curSpellInfo = spell->m_spellInfo;
             // check if we can interrupt spell
-            if ( (unitTarget->m_currentSpells[idx]->getState() == SPELL_STATE_CASTING || (unitTarget->m_currentSpells[idx]->getState() == SPELL_STATE_PREPARING && unitTarget->m_currentSpells[idx]->GetCastTime() > 0.0f)) && unitTarget->m_currentSpells[idx]->m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT && unitTarget->m_currentSpells[idx]->m_spellInfo->PreventionType == SPELL_PREVENTION_TYPE_SILENCE )
+            if ( (unitTarget->m_currentSpells[idx]->getState() == SPELL_STATE_CASTING 
+                    || (unitTarget->m_currentSpells[idx]->getState() == SPELL_STATE_PREPARING  && unitTarget->m_currentSpells[idx]->GetCastTime() > 0.0f)) 
+                && unitTarget->m_currentSpells[idx]->m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT 
+                && unitTarget->m_currentSpells[idx]->m_spellInfo->PreventionType == SPELL_PREVENTION_TYPE_SILENCE)
             {
                 if(_unitCaster)
                 {
@@ -5642,70 +5630,6 @@ void Spell::EffectScriptEffect(uint32 effIndex)
             if(unitTarget->GetTypeId() == TYPEID_PLAYER)
                 (unitTarget->ToPlayer())->ModifyMoney(50000000);
             break;
-        }
-    }
-
-    if( m_spellInfo->SpellFamilyName == SPELLFAMILY_PALADIN )
-    {
-        switch(m_spellInfo->SpellFamilyFlags)
-        {
-            // Judgement
-            case 0x800000:
-            {
-                if (!_unitCaster)
-                    break;
-                uint32 spellId2 = 0;
-
-                // all seals have aura dummy
-                Unit::AuraEffectList const& m_dummyAuras = _unitCaster->GetAuraEffectsByType(SPELL_AURA_DUMMY);
-                for(auto m_dummyAura : m_dummyAuras)
-                {
-                    SpellInfo const *spellInfo = m_dummyAura->GetSpellInfo();
-
-                    // search seal (all seals have judgement's aura dummy spell id in 2 effect
-                    if ( !spellInfo || m_dummyAura->GetSpellInfo()->GetSpellSpecific() != SPELL_SPECIFIC_SEAL || m_dummyAura->GetEffIndex() != 2 )
-                        continue;
-
-                    // must be calculated base at raw base points in spell proto, GetModifier()->m_value for S.Righteousness modified by SPELLMOD_DAMAGE
-                    spellId2 = m_dummyAura->GetSpellInfo()->Effects[2].BasePoints+1;
-
-                    if(spellId2 <= 1)
-                        continue;
-
-                    // found, remove seal
-                    _unitCaster->RemoveAurasDueToSpell(m_dummyAura->GetId());
-
-                    // Sanctified Judgement
-                    Unit::AuraEffectList const& m_auras = _unitCaster->GetAuraEffectsByType(SPELL_AURA_DUMMY);
-                    for(auto m_aura : m_auras)
-                    {
-                        if (m_aura->GetSpellInfo()->SpellIconID == 205 && m_aura->GetSpellInfo()->Attributes == 0x01D0LL)
-                        {
-                            int32 chance = m_aura->GetAmount();
-                            if ( roll_chance_i(chance) )
-                            {
-                                int32 mana = spellInfo->ManaCost;
-                                if (!mana)
-                                    mana = spellInfo->ManaCostPercentage * _unitCaster->GetCreateMana() / 100;
-                                if ( Player* modOwner = m_caster->GetSpellModOwner() )
-                                    modOwner->ApplySpellMod(spellInfo->Id, SPELLMOD_COST, mana);
-                                mana = int32(mana* 0.8f);
-                                CastSpellExtraArgs args;
-                                args.TriggerFlags = TRIGGERED_FULL_MASK;
-                                args.AddSpellBP0(int32(mana));
-                                args.SetTriggeringAura(m_aura);
-                                m_caster->CastSpell(m_caster, 31930, args);
-                            }
-                            break;
-                        }
-                    }
-
-                    break;
-                }
-
-                m_caster->CastSpell(unitTarget,spellId2, true);
-                return;
-            }
         }
     }
 

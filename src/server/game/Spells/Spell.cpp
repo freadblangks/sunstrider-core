@@ -646,7 +646,7 @@ Spell::Spell(WorldObject* Caster, SpellInfo const *info, TriggerCastFlags trigge
        && !m_spellInfo->HasAttribute(SPELL_ATTR0_UNAFFECTED_BY_INVULNERABILITY)
        && !m_spellInfo->HasAttribute(SPELL_ATTR0_ABILITY)
        && !m_spellInfo->IsPassive()
-       && (!IsPositive() || m_spellInfo->HasEffect(SPELL_EFFECT_DISPEL))
+       && (!IsPositive(true) || m_spellInfo->HasEffect(SPELL_EFFECT_DISPEL))
       )
         m_canReflect = true;
 
@@ -789,7 +789,7 @@ void Spell::SelectExplicitTargets()
         // check for explicit target redirection, for Grounding Totem for example
         if (m_spellInfo->GetExplicitTargetMask() & TARGET_FLAG_UNIT_ENEMY
             || (m_spellInfo->GetExplicitTargetMask() & TARGET_FLAG_UNIT
-                && (!IsPositive() || (!m_caster->IsFriendlyTo(target) && m_spellInfo->HasEffect(SPELL_EFFECT_DISPEL)))))
+                && (!IsPositive(!m_caster->IsFriendlyTo(target)))))
         {
             Unit* redirect = nullptr;
             switch (m_spellInfo->DmgClass)
@@ -2292,7 +2292,8 @@ void Spell::AddUnitTarget(Unit* target, uint32 effectMask, bool checkIfValid /*=
 
     // Calculate hit result
     WorldObject* caster = m_originalCaster ? m_originalCaster : m_caster;
-    targetInfo.MissCondition = caster->SpellHitResult(target, m_spellInfo, m_canReflect && !(IsPositive() && m_caster->IsFriendlyTo(target)));
+    bool const friendlyTarget = m_caster->IsFriendlyTo(target);
+    targetInfo.MissCondition = caster->SpellHitResult(target, m_spellInfo, m_canReflect && !(IsPositive(!friendlyTarget) && friendlyTarget));
 
     if (_forceHitResult != SPELL_FORCE_HIT_DEFAULT)
         targetInfo.MissCondition = _forceHitResult;
@@ -2444,7 +2445,8 @@ void Spell::DoTriggersOnSpellHit(Unit* unit, uint8 effMask)
         int32 _duration = 0;
         for (auto i = m_hitTriggerSpells.begin(); i != m_hitTriggerSpells.end(); ++i)
         {
-            if (CanExecuteTriggersOnHit(effMask, i->triggeredByAura) && roll_chance_i(i->chance))
+            bool cheatProc = m_caster && m_caster->GetTypeId() == TYPEID_PLAYER && m_caster->ToPlayer()->GetCommandStatus(CHEAT_PROC);
+            if (CanExecuteTriggersOnHit(effMask, i->triggeredByAura) && (cheatProc || roll_chance_i(i->chance)))
             {
                 m_caster->CastSpell(unit, i->triggeredSpell->Id, true);
                 TC_LOG_DEBUG("spells", "Spell %d triggered spell %d by SPELL_AURA_ADD_TARGET_TRIGGER aura", m_spellInfo->Id, i->triggeredSpell->Id);
@@ -2552,7 +2554,7 @@ void Spell::TargetInfo::DoTargetSpellHit(Spell* spell, uint8 effIndex)
     if (unit->IsAlive() != IsAlive)
         return;
 
-    if (spell->getState() == SPELL_STATE_DELAYED && !spell->IsPositive() && (unit->GetMap()->GetGameTimeMS() - TimeDelay) <= unit->m_lastSanctuaryTime)
+    if (spell->getState() == SPELL_STATE_DELAYED && !spell->IsPositive(!spell->m_caster->IsFriendlyTo(unit)) && (unit->GetMap()->GetGameTimeMS() - TimeDelay) <= unit->m_lastSanctuaryTime)
         return;                                             // No missinfo in that case
 
     if (_spellHitTarget)
@@ -2717,43 +2719,13 @@ void Spell::TargetInfo::DoDamageAndTriggers(Spell* spell)
                 caster->ToPlayer()->CastItemCombatSpell(*spellDamageInfo);*/
         }
 
-        // HACK Shadow Word: Death - deals damage equal to damage done to caster if victim is not killed
-        if (spell->m_spellInfo->SpellFamilyName == SPELLFAMILY_PRIEST && spell->m_spellInfo->SpellFamilyFlags & 0x0000000200000000LL &&
-            caster != spell->unitTarget && spell->unitTarget->IsAlive())
-        {
-            // Redirect damage to caster if victim alive
-            spell->m_caster->CastSpell(spell->m_caster, 32409, TRIGGERED_FULL_MASK);
-            if (spell->m_caster->ToPlayer())
-                spell->m_caster->ToPlayer()->m_swdBackfireDmg = spell->m_damage;
-            //breakcompile;   // Build damage packet directly here and fake spell damage
-            //caster->DealDamage(caster, uint32(m_damage), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_NORMAL, NULL, false);
-        }
         // Judgement of Blood
-        else if (spell->m_spellInfo->SpellFamilyName == SPELLFAMILY_PALADIN && spell->m_spellInfo->SpellFamilyFlags & 0x0000000800000000LL && spell->m_spellInfo->SpellIconID == 153)
+        if (spell->m_spellInfo->SpellFamilyName == SPELLFAMILY_PALADIN && spell->m_spellInfo->SpellFamilyFlags & 0x0000000800000000LL && spell->m_spellInfo->SpellIconID == 153)
         {
             CastSpellExtraArgs args;
             args.TriggerFlags = TRIGGERED_FULL_MASK;
             args.AddSpellBP0(damageInfo.damage * 33 / 100);
             spell->m_caster->CastSpell(spell->m_caster, 32220, args);
-        }
-        // Bloodthirst
-        else if (spell->m_spellInfo->SpellFamilyName == SPELLFAMILY_WARRIOR && spell->m_spellInfo->SpellFamilyFlags & 0x40000000000LL)
-        {
-            uint32 BTAura = 0;
-            switch (spell->m_spellInfo->Id)
-            {
-            case 23881: BTAura = 23885; break;
-            case 23892: BTAura = 23886; break;
-            case 23893: BTAura = 23887; break;
-            case 23894: BTAura = 23888; break;
-            case 25251: BTAura = 25252; break;
-            case 30335: BTAura = 30339; break;
-            default:
-                TC_LOG_ERROR("spells", "Spell::EffectSchoolDMG: Spell %u not handled in blood thirst Aura", spell->m_spellInfo->Id);
-                break;
-            }
-            if (BTAura)
-                spell->m_caster->CastSpell(spell->m_caster, BTAura, true);
         }
 
 #ifdef TESTS
@@ -2812,7 +2784,8 @@ void Spell::TargetInfo::DoDamageAndTriggers(Spell* spell)
         spell->m_needComboPoints = false;
 
     // sun: trigger this block even if we missed target //_spellHitTarget can be null if spell is missed in DoSpellHitOnUnit
-    if (MissCondition != SPELL_MISS_EVADE && /*_spellHitTarget && */ !spell->m_caster->IsFriendlyTo(unit) && (!spell->IsPositive() || spell->m_spellInfo->HasEffect(SPELL_EFFECT_DISPEL)))
+    bool const friendlyTarget = spell->m_caster->IsFriendlyTo(unit);
+    if (MissCondition != SPELL_MISS_EVADE && /*_spellHitTarget && */ !friendlyTarget && !spell->IsPositive(!friendlyTarget))
     {
         //sun: prevent triggered spells to trigger pvp... a frost armor proc is not an offensive action. But we also want it to proc for some direct trigger spells such as charge stun.
         if (!spell->m_triggeredByAuraSpell || !unit->IsCharmedOwnedByPlayerOrPlayer()) 
@@ -3063,9 +3036,10 @@ SpellMissInfo Spell::PreprocessSpellHit(Unit* unit, bool scaleAura, TargetInfo& 
             }
         }
 
+        bool const friendlyTarget = m_caster->IsFriendlyTo(unit);
         if (m_caster->IsValidAttackTarget(unit, m_spellInfo))
             unit->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_HITBYSPELL);
-        else if (!m_caster->IsFriendlyTo(unit))
+        else if (!friendlyTarget)
         {
             // sun: reset damage to 0 if target has Invisibility or Vanish aura (_only_ vanish, not stealth) and isn't visible for caster
             bool isVisibleForHit = ((unit->HasAuraType(SPELL_AURA_MOD_INVISIBILITY) || unit->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_STEALTH, SPELLFAMILY_ROGUE, SPELLFAMILYFLAG_ROGUE_VANISH)) && !m_caster->CanSeeOrDetect(unit, true)) ? false : true;
@@ -3086,7 +3060,7 @@ SpellMissInfo Spell::PreprocessSpellHit(Unit* unit, bool scaleAura, TargetInfo& 
         {
             // for delayed spells ignore negative spells (after duel end) for friendly targets
             // TODO: this cause soul transfer bugged
-            if (m_spellInfo->Speed > 0.0f && unit->GetTypeId() == TYPEID_PLAYER && !IsPositive() && !m_caster->IsValidAssistTarget(unit, m_spellInfo) && m_spellInfo->Id != 45034) // FIXME: Hack for Boundless Agony (Kalecgos)
+            if (m_spellInfo->Speed > 0.0f && unit->GetTypeId() == TYPEID_PLAYER && !IsPositive(!friendlyTarget) && !m_caster->IsValidAssistTarget(unit, m_spellInfo) && m_spellInfo->Id != 45034) // FIXME: Hack for Boundless Agony (Kalecgos)
                 return SPELL_MISS_EVADE;
 
             // assisting case, healing and resurrection
@@ -5380,7 +5354,8 @@ void Spell::HandleFlatThreat()
         float threat = flatMod / float(targetListSize); //sun: cast to float, avoid rounding
 
         //apply threat to every negative targets
-        if(!IsPositive())
+        bool isHostile = caster->IsHostileTo(targetUnit);
+        if(!IsPositive(isHostile))
             targetUnit->GetThreatManager().AddThreat(caster, threat, m_spellInfo);
         else //or assist threat if friendly target
             targetUnit->GetThreatManager().ForwardThreatForAssistingMe(caster, threat, m_spellInfo);
@@ -5484,7 +5459,7 @@ SpellCastResult Spell::CheckCast(bool strict, uint32* param1 /*= nullptr*/, uint
             if (m_caster->GetTypeId() == TYPEID_PLAYER && !m_spellInfo->IsPassive() && !m_CastItem)
             {
                 bool hostileTarget = m_caster->IsHostileTo(target);
-                for (int i = 0; i < 3; i++)
+                for (int i = EFFECT_0; i < MAX_SPELL_EFFECTS; i++)
                 {
                     if (m_spellInfo->IsPositiveEffect(i, hostileTarget) && m_spellInfo->Effects[i].Effect == SPELL_EFFECT_APPLY_AURA)
                         if (target->GetLevel() + 10 < m_spellInfo->SpellLevel)
@@ -5492,13 +5467,13 @@ SpellCastResult Spell::CheckCast(bool strict, uint32* param1 /*= nullptr*/, uint
                 }
             }
 
+            bool hostileTarget = m_caster->IsHostileTo(target);
             // TODO: this check can be applied and for player to prevent cheating when IsPositiveSpell will return always correct result.
             // check target for pet/charmed casts (not self targeted), self targeted cast used for area effects and etc
             if (m_caster->GetTypeId() == TYPEID_UNIT && m_caster->GetCharmerOrOwnerGUID() && !IsTriggered())
             {
                 // check correctness positive/negative cast target (pet cast real check and cheating check)
-                bool hostileTarget = m_caster->IsHostileTo(target);
-                if (IsPositive())
+                if (IsPositive(hostileTarget))
                 {
                     if (hostileTarget)
                         return SPELL_FAILED_BAD_TARGETS;
@@ -5542,7 +5517,7 @@ SpellCastResult Spell::CheckCast(bool strict, uint32* param1 /*= nullptr*/, uint
 
 
             // prevent casting at immune friendly target
-            if (IsPositive() && target->IsImmunedToSpell(m_spellInfo, m_caster))
+            if (IsPositive(hostileTarget) && target->IsImmunedToSpell(m_spellInfo, m_caster))
                 return SPELL_FAILED_TARGET_AURASTATE;
 
         } //end "if(target != m_caster)" block
@@ -7969,7 +7944,7 @@ void Spell::DoEffectOnLaunchTarget(TargetInfo& targetInfo, float multiplier, uin
         unit = m_caster->ToUnit();
 
     // This will only cause combat - the target will engage once the projectile hits (in DoAllEffectOnTarget)
-    if (m_originalCaster && targetInfo.MissCondition != SPELL_MISS_EVADE && !m_originalCaster->IsFriendlyTo(targetedUnit) && (!m_spellInfo->IsPositive() || m_spellInfo->HasEffect(SPELL_EFFECT_DISPEL)) && (m_spellInfo->HasInitialAggro() || targetedUnit->IsEngaged()))
+    if (targetedUnit && m_originalCaster && targetInfo.MissCondition != SPELL_MISS_EVADE && !m_originalCaster->IsFriendlyTo(targetedUnit) && (!m_spellInfo->IsPositive() || m_spellInfo->HasEffect(SPELL_EFFECT_DISPEL)) && (m_spellInfo->HasInitialAggro() || targetedUnit->IsEngaged()))
         m_originalCaster->SetInCombatWith(targetedUnit);
 
     if (!unit)
@@ -8682,9 +8657,9 @@ bool Spell::IsChannelActive() const
         return false;
 }
 
-bool Spell::IsPositive() const
+bool Spell::IsPositive(bool hostileTarget) const
 {
-    return m_spellInfo->IsPositive() && (!m_triggeredByAuraSpell || m_triggeredByAuraSpell->IsPositive());
+    return m_spellInfo->IsPositive(hostileTarget) && (!m_triggeredByAuraSpell || m_triggeredByAuraSpell->IsPositive());
 }
 
 bool Spell::IsTriggered() const

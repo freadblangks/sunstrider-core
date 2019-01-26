@@ -1044,7 +1044,10 @@ enum PlayerCommandStates
     CHEAT_CASTTIME  = 0x02,
     CHEAT_COOLDOWN  = 0x04,
     CHEAT_POWER     = 0x08,
-    CHEAT_WATERWALK = 0x10
+    CHEAT_WATERWALK = 0x10,
+    CHEAT_CRIT      = 0x20,
+    CHEAT_HIT       = 0x40,
+    CHEAT_PROC      = 0x80, //always 100% proc chance
 };
 
 struct SpamReport
@@ -1885,10 +1888,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         float OCTRegenMPPerSpirit();
         float GetRatingCoefficient(CombatRating cr) const;
         float GetRatingBonusValue(CombatRating cr) const;
-        uint32 GetMeleeCritDamageReduction(uint32 damage) const;
-        uint32 GetRangedCritDamageReduction(uint32 damage) const;
-        uint32 GetSpellCritDamageReduction(uint32 damage) const;
-        uint32 GetDotDamageReduction(uint32 damage) const;
 
         float GetExpertiseDodgeOrParryReduction(WeaponAttackType attType) const;
         void UpdateBlockPercentage();
@@ -2113,7 +2112,7 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
         void CastItemCombatSpell(DamageInfo const& damageInfo, Item* item, ItemTemplate const* proto);
 
         void SendInitWorldStates(uint32 zoneid, uint32 areaid);
-        void SendUpdateWorldState(uint32 Field, uint32 Value);
+		void SendUpdateWorldState(uint32 variable, uint32 value) const;
         void SendDirectMessage(WorldPacket const* data) const;
 
         void SendAuraDurationsForTarget(Unit* target);
@@ -2757,7 +2756,6 @@ class TC_GAME_API Player : public Unit, public GridObject<Player>
 
     public:
         bool m_kickatnextupdate;
-        uint32 m_swdBackfireDmg;
 };
 
 void AddItemsSetItem(Player*player,Item *item);

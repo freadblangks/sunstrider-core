@@ -13,12 +13,14 @@
 #include "Movement/MotionMaster.h"
 #include "DBCStructure.h"
 #include "Util.h"
-#include <list>
 #include "SpellDefines.h"
 #include "SpellInfo.h"
 #include "ItemTemplate.h"
 #include "UnitDefines.h"
 #include "Optional.h"
+
+#include <list>
+#include <stack>
 
 struct AbstractFollower;
 class UnitAI;
@@ -850,8 +852,14 @@ class TC_GAME_API Unit : public WorldObject
         bool IsAIEnabled() const { return (i_AI != nullptr); }
         void AIUpdateTick(uint32 diff);
         UnitAI* GetAI() const { return i_AI.get(); }
-        void SetAI(UnitAI* newAI);
         void ScheduleAIChange();
+        void PushAI(UnitAI* newAI);
+        bool PopAI();
+    protected:
+        void SetAI(UnitAI* newAI);
+        UnitAI* GetTopAI() const { return i_AIs.empty() ? nullptr : i_AIs.top().get(); }
+        void RefreshAI();
+    public:
 
         virtual bool IsAffectedByDiminishingReturns() const { return (GetCharmerOrOwnerPlayerOrPlayerItself() != nullptr); }
         DiminishingLevels GetDiminishing(DiminishingGroup group) const;
@@ -1056,6 +1064,27 @@ class TC_GAME_API Unit : public WorldObject
         void CalculateSpellDamageTaken(SpellNonMeleeDamage *damageInfo, int32 damage, SpellInfo const *spellInfo, WeaponAttackType attackType = BASE_ATTACK, bool crit = false);
         void DealSpellDamage(SpellNonMeleeDamage *damageInfo, bool durabilityLoss);
 
+        // player or player's pet resilience (-1%)
+        float GetMeleeCritChanceReduction() const { return GetCombatRatingReduction(CR_CRIT_TAKEN_MELEE); }
+        float GetRangedCritChanceReduction() const { return GetCombatRatingReduction(CR_CRIT_TAKEN_RANGED); }
+        float GetSpellCritChanceReduction() const { return GetCombatRatingReduction(CR_CRIT_TAKEN_SPELL); }
+
+        // player or player's pet resilience (-1%)
+        uint32 GetMeleeCritDamageReduction(uint32 damage) const;
+        uint32 GetRangedCritDamageReduction(uint32 damage) const;
+        uint32 GetSpellCritDamageReduction(uint32 damage) const;
+        uint32 GetDotDamageReduction(uint32 damage) const;
+
+#ifdef LICH_KING
+        // player or player's pet resilience (-1%), cap 100%
+        uint32 GetMeleeDamageReduction(uint32 damage) const { return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_MELEE, 2.0f, 100.0f, damage); }
+        uint32 GetRangedDamageReduction(uint32 damage) const { return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_RANGED, 2.0f, 100.0f, damage); }
+        uint32 GetSpellDamageReduction(uint32 damage) const { return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_SPELL, 2.0f, 100.0f, damage); }
+#endif
+
+        virtual bool CanApplyResilience() const;
+        static void ApplyResilience(Unit const* victim, float* crit, int32* damage, bool isCrit, CombatRating type);
+
         float GetUnitDodgeChance(WeaponAttackType attType, Unit const* victim) const;
         float GetUnitParryChance(WeaponAttackType attType, Unit const* victim) const;
         float GetUnitBlockChance(WeaponAttackType attType, Unit const* victim) const;
@@ -1227,6 +1256,10 @@ class TC_GAME_API Unit : public WorldObject
 
         void ProcessPositionDataChanged(PositionFullTerrainStatus const& data, bool updateCreatureLiquid = false) override;
         virtual void ProcessTerrainStatusUpdate(ZLiquidStatus status, Optional<LiquidData> const& liquidData, bool forceCreature = false);
+
+        // player or player's pet
+        float GetCombatRatingReduction(CombatRating cr) const;
+        uint32 GetCombatRatingDamageReduction(CombatRating cr, float rate, float cap, uint32 damage) const;
 
         virtual void AtEnterCombat() { }
         virtual void AtExitCombat();
@@ -1462,7 +1495,7 @@ class TC_GAME_API Unit : public WorldObject
         uint32 GetCreateHealth() const { return GetUInt32Value(UNIT_FIELD_BASE_HEALTH); }
         void SetCreateMana(uint32 val) { SetUInt32Value(UNIT_FIELD_BASE_MANA, val); }
         uint32 GetCreateMana() const { return GetUInt32Value(UNIT_FIELD_BASE_MANA); }
-        uint32 GetCreatePowers(Powers power) const;
+        uint32 GetCreatePowerValue(Powers power) const;
         float GetPosStat(Stats stat) const { return GetFloatValue(UNIT_FIELD_POSSTAT0+stat); }
         float GetNegStat(Stats stat) const { return GetFloatValue(UNIT_FIELD_NEGSTAT0+stat); }
         float GetCreateStat(Stats stat) const { return m_createStats[stat]; }
@@ -2027,9 +2060,9 @@ class TC_GAME_API Unit : public WorldObject
 
         void UpdateCharmAI();
         void RestoreDisabledAI();
-        std::unique_ptr<UnitAI> i_AI;
-        std::unique_ptr<UnitAI> i_disabledAI;
-        std::unique_ptr<UnitAI> i_lockedAILifetimeExtension; // yes, this lifetime extension is terrible
+        typedef std::stack<std::shared_ptr<UnitAI>> UnitAIStack;
+        UnitAIStack i_AIs;
+        std::shared_ptr<UnitAI> i_AI;
         bool m_aiLocked;
 
         std::unordered_set<AbstractFollower*> m_followingMe;

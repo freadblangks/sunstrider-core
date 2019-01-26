@@ -953,7 +953,11 @@ void SpellInfo::_LoadSpellDiminishInfo()
             if (SpellFamilyFlags & 0x00040000000LL)
                 return DIMINISHING_FEAR;
             // Curses/etc
-            if ((SpellFamilyFlags & 0x80000000) || (SpellFamilyFlags & 0x20000000000))
+            if (
+#ifdef LICH_KING
+                (SpellFamilyFlags & 0x80000000) || //Curse of Recklessness
+#endif
+                (SpellFamilyFlags & 0x20000000000))
                 return DIMINISHING_LIMITONLY;
             break;
         }
@@ -1667,7 +1671,7 @@ bool SpellInfo::IsRequiringDeadTarget() const
 
 bool SpellInfo::IsAllowingDeadTarget() const
 {
-    return AttributesEx2 & (SPELL_ATTR2_CAN_TARGET_DEAD) || Attributes & (SPELL_ATTR0_CASTABLE_WHILE_DEAD) || Targets & (TARGET_FLAG_CORPSE_ALLY | TARGET_FLAG_CORPSE_ENEMY | TARGET_FLAG_UNIT_DEAD);
+    return AttributesEx2 & (SPELL_ATTR2_CAN_TARGET_DEAD) || Targets & (TARGET_FLAG_CORPSE_ALLY | TARGET_FLAG_CORPSE_ENEMY | TARGET_FLAG_UNIT_DEAD);
 }
 
 bool SpellInfo::IsGroupBuff() const
@@ -2082,26 +2086,40 @@ bool SpellInfo::IsStackableOnOneSlotWithDifferentCasters() const
     return StackAmount > 1 && !IsChanneled() && !HasAttribute(SPELL_ATTR3_STACK_FOR_DIFF_CASTERS);
 }
 
-bool SpellInfo::IsPositive() const
+bool SpellInfo::IsPositive(bool hostileTarget /* = false*/) const
 {
-    return !HasAttribute(SPELL_ATTR0_CU_NEGATIVE);
+    bool positive = !HasAttribute(SPELL_ATTR0_CU_NEGATIVE);
+    //sun: dispel case: make it negative on hostile targets
+    if (positive && hostileTarget)
+        if (HasEffect(SPELL_EFFECT_DISPEL) || HasEffect(SPELL_EFFECT_DISPEL_MECHANIC))
+            positive = false;
+
+    return positive;
 }
 
 bool SpellInfo::IsPositiveEffect(uint8 effIndex, bool hostileTarget /* = false */) const
 {
-    if(HasEffect(SPELL_EFFECT_DISPEL, effIndex) || HasEffect(SPELL_EFFECT_DISPEL_MECHANIC, effIndex))
-        return !hostileTarget;  // positive on friendly, negative on hostile
-
+    bool positive;
     switch (effIndex)
     {
-        default:
-        case 0:
-            return !HasAttribute(SPELL_ATTR0_CU_NEGATIVE_EFF0);
-        case 1:
-            return !HasAttribute(SPELL_ATTR0_CU_NEGATIVE_EFF1);
-        case 2:
-            return !HasAttribute(SPELL_ATTR0_CU_NEGATIVE_EFF2);
+    default:
+    case 0:
+        positive = !HasAttribute(SPELL_ATTR0_CU_NEGATIVE_EFF0);
+        break;
+    case 1:
+        positive = !HasAttribute(SPELL_ATTR0_CU_NEGATIVE_EFF1);
+        break;
+    case 2:
+        positive = !HasAttribute(SPELL_ATTR0_CU_NEGATIVE_EFF2);
+        break;
     }
+
+    //sun: dispel case: make it negative on hostile targets
+    if (hostileTarget && positive)
+        if (HasEffect(SPELL_EFFECT_DISPEL, effIndex) || HasEffect(SPELL_EFFECT_DISPEL_MECHANIC, effIndex))
+            return false;
+
+    return positive;
 }
 
 uint32 SpellInfo::GetDispelMask() const
@@ -2304,7 +2322,7 @@ int32 SpellEffectInfo::CalcValue(WorldObject const* caster/*= nullptr*/, int32 c
     if (caster)
         casterUnit = caster->ToUnit();
 
-    if (casterUnit  && basePointsPerLevel)
+    if (casterUnit && basePointsPerLevel)
     {
         //Cap caster level with MaxLevel (upper) and BaseLevel (lower), then get the difference between that level and the spell level
         int32 level = int32(casterUnit->GetLevel());

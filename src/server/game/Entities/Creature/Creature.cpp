@@ -1021,8 +1021,8 @@ void Creature::RegenerateHealth()
 
 bool Creature::AIM_Destroy()
 {
-    SetAI(nullptr);
-
+    PopAI();
+    RefreshAI();
     return true;
 }
 
@@ -1092,7 +1092,8 @@ bool Creature::Create(ObjectGuid::LowType guidlow, Map *map, uint32 phaseMask, u
     if (GetCreatureTemplate()->flags_extra & CREATURE_FLAG_EXTRA_DUNGEON_BOSS && map->IsDungeon())
         m_respawnDelay = 0; // special value, prevents respawn for dungeon bosses unless overridden
 
-    if(!(GetCreatureTemplate()->flags_extra & CREATURE_FLAG_NO_CORPSE_UPON_DEATH))
+
+    if (!(GetCreatureTemplate()->DifficultyFlags.Flags1 & CREATURE_DIFFICULTYFLAGS_NO_CORPSE_UPON_DEATH))
     {
         switch (GetCreatureTemplate()->rank)
         {
@@ -1180,7 +1181,7 @@ Unit* Creature::SelectVictim(bool evade /*= true*/)
     else
         return nullptr;
 
-    if (target && _IsTargetAcceptable(target) && _CanCreatureAttack(target) == CAN_ATTACK_RESULT_OK)
+    if (target && _IsTargetAcceptable(target) && CanCreatureAttack(target))
     {
         if (!IsFocusing(nullptr, true))
             SetInFront(target);
@@ -1234,13 +1235,13 @@ void Creature::InitializeReactState()
         SetReactState(REACT_AGGRESSIVE);
 }
 
-bool Creature::CanResetTalents(Player* player) const
+bool Creature::CanResetTalents(Player* player, bool pet) const
 {
     Trainer::Trainer const* trainer = sObjectMgr->GetTrainer(GetEntry());
     if (!trainer)
         return false;
 
-    return player->GetLevel() >= 10 && trainer->IsTrainerValidForPlayer(player) && trainer->GetTrainerType() == Trainer::Type::Class;
+	return player->GetLevel() >= 10 && trainer->IsTrainerValidForPlayer(player) && trainer->GetTrainerType() == (pet ? Trainer::Type::Pet : Trainer::Type::Class);
 }
 
 bool Creature::isCanInteractWithBattleMaster(Player* pPlayer, bool msg) const
@@ -1453,8 +1454,8 @@ void Creature::UpdateLevelDependantStats()
             break;
     }
 
-    SetStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE, (float)health);
-    SetStatFlatModifier(UNIT_MOD_MANA, BASE_VALUE, (float)mana);
+    //sun: commented out. That's what SetCreateHeath is for. Creature::UpdateMaxHealth() has been updated accordingly. This was also breaking some guardians health such as water elemental
+    //SetStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE, (float)health);
 
     // damage
     float basedamage = stats->GenerateBaseDamage(cInfo);
@@ -2733,6 +2734,10 @@ bool Creature::InitCreatureAddon(bool reload)
     if (m_creatureInfoAddon->move_flags != 0)
         SetUnitMovementFlags(m_creatureInfoAddon->move_flags);
 
+    // Check if visibility distance different
+    if (m_creatureInfoAddon->visibilityDistanceType != VisibilityDistanceType::Normal)
+        SetVisibilityDistanceOverride(m_creatureInfoAddon->visibilityDistanceType);
+
     //Load Path
     if (m_creatureInfoAddon->path_id != 0)
         _waypointPathId = m_creatureInfoAddon->path_id;
@@ -2831,7 +2836,6 @@ void Creature::AllLootRemovedFromCorpse()
         return;
             
     float decayRate = sWorld->GetRate(RATE_CORPSE_DECAY_LOOTED);
-    CreatureTemplate const *cinfo = GetCreatureTemplate();
 
     // corpse skinnable, but without skinning flag, and then skinned, corpse will despawn next update
     if (loot.loot_type == LOOT_SKINNING)
@@ -2986,7 +2990,7 @@ void Creature::AreaCombat()
         for(const auto & i : PlayerList)
         {
             if (Player* i_pl = i.GetSource())
-                if (i_pl->IsAlive() && IsWithinCombatRange(i_pl, range) && _CanCreatureAttack(i_pl, false) == CAN_ATTACK_RESULT_OK)
+                if (i_pl->IsAlive() && IsWithinCombatRange(i_pl, range) && CanCreatureAttack(i_pl, false))
                     GetThreatManager().AddThreat(i_pl, 0.0f);
         }
     }

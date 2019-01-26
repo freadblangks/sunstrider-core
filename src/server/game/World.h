@@ -229,6 +229,8 @@ enum WorldConfigs
     CONFIG_BATTLEGROUND_TIMELIMIT_WARSONG,
     CONFIG_BATTLEGROUND_TIMELIMIT_ARENA,
     CONFIG_CHARDELETE_KEEP_DAYS,
+    CONFIG_ALLOW_TICKETS,
+    CONFIG_DELETE_CHARACTER_TICKET_TRACE,
 
     CONFIG_START_ALL_EXPLORED,
     CONFIG_START_ALL_REP,
@@ -245,6 +247,7 @@ enum WorldConfigs
     CONFIG_NUMTHREADS,
 
     CONFIG_WORLDCHANNEL_MINLEVEL,
+    CONFIG_TICKET_LEVEL_REQ,
 
     //logs duration in days. -1 to keep forever. 0 to disable logging.
     CONFIG_LOG_BG_STATS,
@@ -669,9 +672,9 @@ class TC_GAME_API World
         void SendWorldText(int32 string_id, ...);
         void SendGlobalText(const char* text, WorldSession* self = nullptr);
         void SendGMText(int32 string_id, ...);
-        void SendGlobalMessage(WorldPacket* packet, WorldSession* self = nullptr, uint32 team = 0);
-        void SendGlobalGMMessage(WorldPacket* packet, WorldSession* self = nullptr, uint32 team = 0);
-        void SendZoneMessage(uint32 zone, WorldPacket* packet, WorldSession *self = nullptr, uint32 team = 0);
+        void SendGlobalMessage(WorldPacket const* packet, WorldSession* self = nullptr, uint32 team = 0);
+        void SendGlobalGMMessage(WorldPacket const* packet, WorldSession* self = nullptr, uint32 team = 0);
+        void SendZoneMessage(uint32 zone, WorldPacket const* packet, WorldSession *self = nullptr, uint32 team = 0);
         void SendZoneText(uint32 zone, const char* text, WorldSession* self = nullptr, uint32 team = 0);
         void SendServerMessage(uint32 type, const char* text = "", Player* player = nullptr);
 

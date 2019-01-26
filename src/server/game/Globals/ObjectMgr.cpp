@@ -108,7 +108,6 @@ ObjectMgr::ObjectMgr() :
     _mailid(1),
     _auctionId(1),
     maxSpellId(0),
-    _GMticketid(0),
     DBCLocaleIndex(LOCALE_enUS)
 {
     for (uint8 i = 0; i < MAX_CLASSES; ++i)
@@ -278,10 +277,11 @@ void ObjectMgr::LoadCreatureTemplates(bool reload /* = false */)
 {
     uint32 oldMSTime = GetMSTime();
 
+    uint32 const expansion = sWorld->GetWowPatch() > WOW_PATCH_240 ? 2 : 1;
     //                                                 
     QueryResult result = WorldDatabase.PQuery("SELECT entry, difficulty_entry_1, modelid1, modelid2, modelid3, "
                                              //   5
-                                             "modelid4, name, subname, IconName, gossip_menu_id, minlevel, maxlevel, exp, faction, npcflag, speed_walk, speed_run, "
+                                             "modelid4, name, subname, IconName, gossip_menu_id, ct.minlevel, ct.maxlevel, exp, faction, npcflag, speed_walk, speed_run, "
                                              //
                                              "scale, `rank`, dmgschool, BaseAttackTime, RangeAttackTime, BaseVariance, RangeVariance, unit_class, unit_flags, unit_flags2, dynamicflags, family,"
                                              //   
@@ -293,9 +293,15 @@ void ObjectMgr::LoadCreatureTemplates(bool reload /* = false */)
                                              //           
                                              "HealthModifier, ManaModifier, ArmorModifier, DamageModifier, ExperienceModifier, RacialLeader, RegenHealth, "
                                              //   
-                                             "mechanic_immune_mask, spell_school_immune_mask, flags_extra, ScriptName, ctm.Ground, ctm.Swim, ctm.Flight, ctm.Rooted, patch "
+                                             "mechanic_immune_mask, spell_school_immune_mask, flags_extra, ScriptName, ctm.Ground, ctm.Swim, ctm.Flight, ctm.Rooted, df.Flags1, df.Flags2, df.Flags3, df.Flags4, df.Flags5, patch "
                                              //   
-                                             "FROM creature_template ct LEFT JOIN creature_template_movement ctm ON ct.entry = ctm.CreatureId WHERE patch=(SELECT max(patch) FROM creature_template t2 WHERE ct.entry=t2.entry && patch <= %u)", sWorld->GetWowPatch());
+                                             "FROM creature_template ct "
+                                             "LEFT JOIN creature_template_movement ctm ON ct.entry = ctm.CreatureId "
+                                             "LEFT JOIN creature_difficulty_flags df ON ct.entry = df.CreatureId "
+                                             "WHERE ct.patch = (SELECT max(patch) FROM creature_template ct2 WHERE ct.entry = ct2.entry AND ct2.patch <= %u) "
+                                             "      AND (df.Expansion IS NULL OR df.Expansion = (SELECT max(expansion) FROM creature_difficulty_flags df2 WHERE df.CreatureId = df2.CreatureId AND df2.expansion <= %u)) "
+                                             "GROUP BY ct.entry ", //There can be several entry for a creature in creature_difficulty_flags
+                                             sWorld->GetWowPatch(), expansion);
 
     if (!result)
     {
@@ -399,6 +405,21 @@ void ObjectMgr::LoadCreatureTemplate(Field* fields)
     f++;
     if (!fields[f].IsNull())
         creatureTemplate.Movement.Rooted = fields[f].GetBool();
+    f++;
+    if (!fields[f].IsNull())
+        creatureTemplate.DifficultyFlags.Flags1 = fields[f].GetUInt32();
+    f++;
+    if (!fields[f].IsNull())
+        creatureTemplate.DifficultyFlags.Flags2 = fields[f].GetUInt32();
+    f++;
+    if (!fields[f].IsNull())
+        creatureTemplate.DifficultyFlags.Flags3 = fields[f].GetUInt32();
+    f++;
+    if (!fields[f].IsNull())
+        creatureTemplate.DifficultyFlags.Flags4 = fields[f].GetUInt32();
+    f++;
+    if (!fields[f].IsNull())
+        creatureTemplate.DifficultyFlags.Flags5 = fields[f].GetUInt32();
     f++;
 }
 
@@ -612,8 +633,8 @@ void ObjectMgr::LoadCreatureAddons()
 {
     uint32 oldMSTime = GetMSTime();
 
-    //                                                0       1        2      3       4       5      6          7
-    QueryResult result = WorldDatabase.PQuery("SELECT spawnID, path_id, mount, bytes1, bytes2, emote, moveflags, auras "
+    //                                                0        1        2      3       4       5      6          7                       8
+    QueryResult result = WorldDatabase.PQuery("SELECT spawnID, path_id, mount, bytes1, bytes2, emote, moveflags, visibilityDistanceType, auras "
                                               "FROM creature_addon t1 WHERE patch=(SELECT max(patch) FROM creature_addon t2 WHERE t1.spawnID = t2.spawnID && patch <= %u)", sWorld->GetWowPatch());
 
     if (!result)
@@ -650,8 +671,9 @@ void ObjectMgr::LoadCreatureAddons()
         creatureAddon.bytes2  = fields[4].GetUInt32();
         creatureAddon.emote   = fields[5].GetUInt32();
         creatureAddon.move_flags = fields[6].GetUInt32();
+        creatureAddon.visibilityDistanceType = VisibilityDistanceType(fields[7].GetUInt8());
 
-        Tokenizer tokens(fields[7].GetString(), ' ');
+        Tokenizer tokens(fields[8].GetString(), ' ');
         uint8 i = 0;
         creatureAddon.auras.resize(tokens.size());
         for (auto token : tokens)
@@ -694,6 +716,13 @@ void ObjectMgr::LoadCreatureAddons()
             creatureAddon.move_flags = creatureAddon.move_flags & ~MOVEMENTFLAG_SPLINE_ENABLED;
         }
 
+        if (creatureAddon.visibilityDistanceType >= VisibilityDistanceType::Max)
+        {
+            TC_LOG_ERROR("sql.sql", "Creature (GUID: %u) has invalid visibilityDistanceType (%u) defined in `creature_addon`.",
+                guid, AsUnderlyingType(creatureAddon.visibilityDistanceType));
+            creatureAddon.visibilityDistanceType = VisibilityDistanceType::Normal;
+        }
+
         ++count;
     }
     while (result->NextRow());
@@ -710,8 +739,8 @@ void ObjectMgr::LoadCreatureTemplateAddons()
 {
     uint32 oldMSTime = GetMSTime();
 
-    //                                                0       1       2      3       4       5        6         7
-    QueryResult result = WorldDatabase.PQuery("SELECT entry, path_id, mount, bytes1, bytes2, emote, moveflags, auras "
+    //                                                0      1       2      3       4       5        6         7                       8
+    QueryResult result = WorldDatabase.PQuery("SELECT entry, path_id, mount, bytes1, bytes2, emote, moveflags, visibilityDistanceType, auras "
                                               "FROM creature_template_addon t1 WHERE patch=(SELECT max(patch) FROM creature_template_addon t2 WHERE t1.entry = t2.entry && patch <= %u)", sWorld->GetWowPatch());
 
     if (!result)
@@ -741,8 +770,9 @@ void ObjectMgr::LoadCreatureTemplateAddons()
         creatureAddon.bytes2  = fields[4].GetUInt32();
         creatureAddon.emote   = fields[5].GetUInt32();
         creatureAddon.move_flags = fields[6].GetUInt32();
+        creatureAddon.visibilityDistanceType = VisibilityDistanceType(fields[7].GetUInt8());
 
-        Tokenizer tokens(fields[7].GetString(), ' ');
+        Tokenizer tokens(fields[8].GetString(), ' ');
         uint8 i = 0;
         creatureAddon.auras.resize(tokens.size());
         for (auto token : tokens)
@@ -780,6 +810,13 @@ void ObjectMgr::LoadCreatureTemplateAddons()
         {
             TC_LOG_ERROR("sql.sql", "Creature (Entry: %u) have invalid flag MOVEMENTFLAG_SPLINE_ENABLED in moveflags, removed", entry);
             creatureAddon.move_flags = creatureAddon.move_flags & ~MOVEMENTFLAG_SPLINE_ENABLED;
+        }
+
+        if (creatureAddon.visibilityDistanceType >= VisibilityDistanceType::Max)
+        {
+            TC_LOG_ERROR("sql.sql", "Creature (Entry: %u) has invalid visibilityDistanceType (%u) defined in `creature_template_addon`.",
+                entry, AsUnderlyingType(creatureAddon.visibilityDistanceType));
+            creatureAddon.visibilityDistanceType = VisibilityDistanceType::Normal;
         }
 
         ++count;
@@ -2539,7 +2576,7 @@ void ObjectMgr::LoadPetLevelInfo()
     // Loading levels data
     {
         //                                                0               1      2   3     4    5    6    7     8    9      10       11
-        QueryResult result  = WorldDatabase.Query("SELECT creature_entry, level, hp, mana, str, agi, sta, inte, spi, armor, min_dmg, max_dmg FROM pet_levelstats");
+        QueryResult result  = WorldDatabase.PQuery("SELECT creature_entry, level, hp, mana, str, agi, sta, inte, spi, armor, min_dmg, max_dmg FROM pet_levelstats t1 WHERE patch = (SELECT max(patch) FROM pet_levelstats t2 WHERE t1.creature_entry = t2.creature_entry && patch <= %u)", sWorld->GetWowPatch());
 
         uint32 count = 0;
 
@@ -3455,7 +3492,7 @@ void ObjectMgr::LoadQuests()
             if(int32 skill_id =  SkillByQuestSort(-int32(qinfo->_zoneOrSort)))
             {
                 // skill is positive value in SkillOrClass
-                if(qinfo->_requiredSkillId != skill_id )
+                if (qinfo->_requiredSkillId != skill_id)
                 {
                     TC_LOG_ERROR("sql.sql","Quest %u has `_zoneOrSort` = %i (skill sort case) but `SkillOrClass` does not have a corresponding value (%i).",
                         qinfo->GetQuestId(),qinfo->_zoneOrSort,skill_id);
@@ -7985,129 +8022,6 @@ bool LoadTrinityStrings(DatabaseWorkerPool<WorldDatabaseConnection>& db, char co
 
     // for scripting localized strings allowed use _only_ negative entries
     return sObjectMgr->LoadTrinityStrings(db,table,end_value,start_value);
-}
-
-uint64 ObjectMgr::GenerateGMTicketId()
-{
-  return ++_GMticketid;
-}
-
-void ObjectMgr::LoadGMTickets()
-{
-  m_GMTicketList.clear();
-
-  QueryResult result = CharacterDatabase.Query( "SELECT `guid`, `playerGuid`, `message`, `createtime`, `map`, `posX`, `posY`, `posZ`, `timestamp`, `closed`, `assignedto`, `comment` FROM `gm_tickets`" );
-
-  if(!result)
-  {
-    TC_LOG_INFO("server.loading"," \n>> GM Tickets table is empty, no tickets were loaded.\n" );
-    
-    return;
-  }
-
-  uint16 count = 0;
-  GM_Ticket *ticket;
-  do
-  {
-    Field *fields = result->Fetch();
-    ticket = new GM_Ticket;
-    ticket->guid = fields[0].GetUInt32();
-    ticket->playerGuid = ObjectGuid(HighGuid::Player, fields[1].GetUInt32());
-    ticket->message = fields[2].GetString();
-    ticket->createtime = fields[3].GetUInt32();
-    ticket->map = fields[4].GetUInt32();
-    ticket->pos_x = fields[5].GetFloat();
-    ticket->pos_y = fields[6].GetFloat();
-    ticket->pos_z = fields[7].GetFloat();
-    ticket->timestamp = fields[8].GetUInt32();
-    ticket->closed = fields[9].GetUInt32();
-    ticket->assignedToGM = ObjectGuid(HighGuid::Player, fields[10].GetUInt32());
-    ticket->comment = fields[11].GetString();
-    ++count;
-
-    m_GMTicketList.push_back(ticket);
-
-  } while( result->NextRow() );
-
-  result = CharacterDatabase.PQuery("SELECT MAX(`guid`) from `gm_tickets`");
-  _GMticketid = (*result)[0].GetUInt64(); 
-
-  TC_LOG_INFO("server.loading",">>> %u GM Tickets loaded from the database.", count);
-  
-}
-
-GM_Ticket* ObjectMgr::GetGMTicket(uint64 ticketGuid)
-{
-    for(GmTicketList::const_iterator i = m_GMTicketList.begin(); i != m_GMTicketList.end(); ++i)
-        if((*i) && (*i)->guid == ticketGuid) 
-            return (*i);
-
-    return nullptr;
-}
-
-GM_Ticket* ObjectMgr::GetGMTicketByPlayer(ObjectGuid playerGuid)
-{
-    for(GmTicketList::const_iterator i = m_GMTicketList.begin(); i != m_GMTicketList.end(); ++i)
-        if((*i) && (*i)->playerGuid == playerGuid && (*i)->closed == 0) 
-            return (*i);
-
-    return nullptr;        
-}
-
-void ObjectMgr::AddOrUpdateGMTicket(GM_Ticket &ticket, bool create)
-{
-  if(create)
-    m_GMTicketList.push_back(&ticket);
-
-  _AddOrUpdateGMTicket(ticket);    
-}
-
-void ObjectMgr::_AddOrUpdateGMTicket(GM_Ticket &ticket)
-{
-    std::string msg(ticket.message);
-    std::string comment(ticket.comment); 
-    CharacterDatabase.EscapeString(msg);
-    CharacterDatabase.EscapeString(comment);
-    std::ostringstream ss;
-    ss << "REPLACE INTO `gm_tickets` (`guid`, `playerGuid`, `message`, `createtime`, `map`, `posX`, `posY`, `posZ`, `timestamp`, `closed`, `assignedto`, `comment`) VALUES('";
-    ss << ticket.guid << "', '";
-    ss << ticket.playerGuid << "', '";
-    ss << msg << "', '" ;
-    ss << ticket.createtime << "', '";
-    ss << ticket.map << "', '";
-    ss << ticket.pos_x << "', '";
-    ss << ticket.pos_y << "', '";
-    ss << ticket.pos_z << "', '";
-    ss << ticket.timestamp << "', '";
-    ss << ticket.closed << "', '";
-    ss << ticket.assignedToGM << "', '";
-    ss << comment << "');";
-
-    CharacterDatabase.Execute(ss.str().c_str());
-}
-
-void ObjectMgr::RemoveGMTicket(GM_Ticket *ticket, int64 source, bool permanently)
-{
-  for(auto i = m_GMTicketList.begin(); i != m_GMTicketList.end(); ++i)
-    if((*i)->guid == ticket->guid) 
-    {
-      if(permanently)
-      {
-        CharacterDatabase.PExecute("DELETE FROM `gm_tickets` WHERE `guid` = '%u'", ticket->guid);
-        i = m_GMTicketList.erase(i);
-        ticket = nullptr;
-        return;
-      }
-      (*i)->closed = source;
-      _AddOrUpdateGMTicket(*(*i)); 
-    }
-}
-
-void ObjectMgr::RemoveGMTicket(uint64 ticketGuid, int64 source, bool permanently)
-{
-  GM_Ticket *ticket = GetGMTicket(ticketGuid);
-  assert( ticket );
-  RemoveGMTicket(ticket, source, permanently);
 }
 
 void ObjectMgr::LoadItemExtendedCost()
